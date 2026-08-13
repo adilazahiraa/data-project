@@ -2,7 +2,6 @@ import os
 import re
 import time
 from pathlib import Path
-from urllib.parse import urljoin
 
 import pandas as pd
 import requests
@@ -10,61 +9,89 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
+FINAL_DATA_DIR = PROJECT_ROOT / "final"
 
 BASE_URL = "https://data.bkpm.go.id"
 SEARCH_URL = f"{BASE_URL}/cari-data"
 
 QUERY = "Data Realisasi Investasi Triwulan"
 
-session = requests.Session()
+def create_session():
 
-retry_strategy = Retry(
-    total=5,
-    connect=5,
-    read=5,
-    backoff_factor=2,
-    status_forcelist=[429, 500, 502, 503, 504],
-    allowed_methods=["GET"],
-)
+    retry_strategy = Retry(
+        total=5,
+        connect=5,
+        read=5,
+        backoff_factor=2,
+        status_forcelist=[
+            429,
+            500,
+            502,
+            503,
+            504,
+        ],
+        allowed_methods=["GET"],
+    )
 
-adapter = HTTPAdapter(
-    max_retries=retry_strategy
-)
+    adapter = HTTPAdapter(
+        max_retries=retry_strategy
+    )
 
-session.mount("http://", adapter)
-session.mount("https://", adapter)
+    session = requests.Session()
+
+    session.mount(
+        "http://",
+        adapter
+    )
+
+    session.mount(
+        "https://",
+        adapter
+    )
+
+    return session
+
+
+session = create_session()
 
 def get_dataset_links():
+
     datasets = []
+
     page = 1
 
     while True:
 
-        print(f"\nMencari dataset - halaman {page}")
+        print(
+            f"\nMencari dataset - halaman {page}"
+        )
 
         params = {
             "query": QUERY,
             "page": page,
         }
 
-        try:
-            response = session.get(
-                SEARCH_URL,
-                params=params,
-                timeout=30,
-            )
+        response = session.get(
+            SEARCH_URL,
+            params=params,
+            timeout=30,
+        )
 
-        except requests.exceptions.RequestException as e:
-            print("ERROR:", e)
-            break
-
-        print("Status:", response.status_code)
+        print(
+            "Status:",
+            response.status_code
+        )
 
         if response.status_code != 200:
-            print("Gagal mengambil halaman pencarian.")
+
+            print(
+                "Gagal mengambil halaman pencarian."
+            )
+
             break
 
         soup = BeautifulSoup(
@@ -93,7 +120,7 @@ def get_dataset_links():
             if not href:
                 continue
 
-            url = urljoin(
+            url = requests.compat.urljoin(
                 BASE_URL,
                 href,
             )
@@ -107,28 +134,35 @@ def get_dataset_links():
                 title_element = title.find("h5")
 
                 if title_element:
-                    title_text = title_element.get_text(
-                        strip=True
+
+                    title_text = (
+                        title_element.get_text(
+                            strip=True
+                        )
                     )
+
                 else:
+
                     title_text = link.get_text(
                         strip=True
                     )
 
             else:
+
                 title_text = link.get_text(
                     strip=True
                 )
 
-            if "Data Realisasi Investasi Triwulan" not in title_text:
+            if (
+                "Data Realisasi Investasi Triwulan"
+                not in title_text
+            ):
                 continue
 
-            if "Triwulan II Tahun 2026" in title_text:
-                print("\n!!! Q2 2026 DITEMUKAN !!!")
-                print("Judul :", title_text)
-                print("URL   :", url)
-
-            if url not in [x["url"] for x in datasets]:
+            if url not in [
+                item["url"]
+                for item in datasets
+            ]:
 
                 datasets.append({
                     "judul": title_text,
@@ -139,7 +173,7 @@ def get_dataset_links():
 
         print(
             "Dataset baru:",
-            new_links,
+            new_links
         )
 
         if new_links == 0:
@@ -148,32 +182,30 @@ def get_dataset_links():
         page += 1
 
         if page > 100:
+
             print(
                 "Berhenti karena batas halaman."
             )
+
             break
 
         time.sleep(0.5)
 
     return datasets
 
+
 def get_parent_id(dataset_url):
 
-    try:
-        response = session.get(
-            dataset_url,
-            timeout=30,
-        )
-
-    except requests.exceptions.RequestException as e:
-        print("ERROR:", e)
-        return None
+    response = session.get(
+        dataset_url,
+        timeout=30,
+    )
 
     if response.status_code != 200:
 
         print(
             "Gagal membuka:",
-            dataset_url,
+            dataset_url
         )
 
         return None
@@ -189,6 +221,7 @@ def get_parent_id(dataset_url):
         return match.group(1)
 
     return None
+
 
 def get_data(parent_id):
 
@@ -214,10 +247,10 @@ def get_data(parent_id):
             "search[value]": "",
             "search[regex]": "false",
 
-            "dataset_detail_parent_id": parent_id,
+            "dataset_detail_parent_id":
+                parent_id,
         }
 
-        # Parameter DataTables
         for i in range(14):
 
             params[
@@ -256,11 +289,7 @@ def get_data(parent_id):
 
             print(
                 "  ERROR:",
-                e,
-            )
-
-            print(
-                "  Dataset ini dilewati."
+                e
             )
 
             return []
@@ -282,10 +311,6 @@ def get_data(parent_id):
 
             print(
                 "  Response bukan JSON."
-            )
-
-            print(
-                "  Dataset ini dilewati."
             )
 
             return []
@@ -323,20 +348,171 @@ def get_data(parent_id):
 
     return all_rows
 
+def save_raw_data(df, periode, index):
 
-# ============================================================
-# CREATE SAFE FILE NAME
-# ============================================================
+    RAW_DATA_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-def create_safe_filename(title):
-
-    filename = re.sub(
+    safe_periode = re.sub(
         r"[^A-Za-z0-9]+",
         "_",
-        title,
-    ).strip("_").lower()
+        periode,
+    ).strip("_")
 
-    return filename
+    filename = (
+        f"bkpm_investasi_"
+        f"{safe_periode}_"
+        f"{index}.parquet"
+    )
+
+    filepath = RAW_DATA_DIR / filename
+
+    df.to_parquet(
+        filepath,
+        index=False,
+    )
+
+    print(
+        "Raw data disimpan:",
+        filepath,
+    )
+
+def prepare_dataframe(df):
+
+    df = df.copy()
+
+    df.columns = (
+        df.columns
+        .str.replace(
+            "\ufeff",
+            "",
+            regex=False,
+        )
+    )
+
+    numeric_columns = [
+        "investasi_rp_juta",
+        "investasi_us_ribu",
+        "tki",
+    ]
+
+    for column in numeric_columns:
+
+        if column in df.columns:
+
+            df[column] = pd.to_numeric(
+                df[column],
+                errors="coerce",
+            )
+
+    return df
+
+
+def create_aggregation(
+    df,
+    status_penanaman_modal=None,
+    sektor_utama=None,
+    nama_sektor=None,
+    group_by=None,
+):
+
+    filtered_df = df.copy()
+
+
+    if status_penanaman_modal:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "status_penanaman_modal"
+            ]
+            == status_penanaman_modal
+        ]
+
+    if sektor_utama:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "sektor_utama"
+            ]
+            == sektor_utama
+        ]
+
+    if nama_sektor:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "nama_sektor"
+            ]
+            == nama_sektor
+        ]
+
+    if filtered_df.empty:
+
+        print(
+            "Tidak ada data setelah filter."
+        )
+
+        return pd.DataFrame()
+
+    if group_by is None:
+
+        group_by = [
+            "periode",
+            "provinsi",
+        ]
+
+    result = (
+        filtered_df
+        .groupby(
+            group_by,
+            as_index=False,
+        )
+        .agg(
+            investasi_rp_juta=(
+                "investasi_rp_juta",
+                "sum",
+            ),
+            investasi_us_ribu=(
+                "investasi_us_ribu",
+                "sum",
+            ),
+            tki=(
+                "tki",
+                "sum",
+            ),
+        )
+    )
+
+    return result
+
+
+def save_final_data(df, filename):
+
+    FINAL_DATA_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    filepath = FINAL_DATA_DIR / filename
+
+    df.to_csv(
+        filepath,
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    print(
+        "Final data disimpan:",
+        filepath,
+    )
+
+    print(
+        "Total rows:",
+        len(df),
+    )
+
 
 def main():
 
@@ -345,33 +521,18 @@ def main():
     )
 
     print(
-        "BKPM AUTOMATED SCRAPER"
+        "BKPM AUTOMATED ETL"
     )
 
     print(
         "========================================"
     )
-
-    # Pastikan folder raw tersedia
-    RAW_DATA_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
 
     datasets = get_dataset_links()
 
     print(
-        "\n========================================"
-    )
-
-    print(
-        "TOTAL DATASET DITEMUKAN:",
+        "\nTotal dataset ditemukan:",
         len(datasets),
-    )
-
-    print(
-        "========================================"
     )
 
     if not datasets:
@@ -384,23 +545,10 @@ def main():
 
     dataset_info = []
 
-    for i, dataset in enumerate(
-        datasets,
-        start=1,
-    ):
-
-        print(
-            f"\n[{i}/{len(datasets)}]",
-            dataset["judul"],
-        )
+    for dataset in datasets:
 
         parent_id = get_parent_id(
             dataset["url"]
-        )
-
-        print(
-            "Parent ID:",
-            parent_id,
         )
 
         dataset_info.append({
@@ -411,40 +559,10 @@ def main():
 
         time.sleep(1)
 
-    dataset_df = pd.DataFrame(
-        dataset_info
-    )
 
-    dataset_list_path = (
-        RAW_DATA_DIR /
-        "bkpm_dataset_list.csv"
-    )
-
-    dataset_df.to_csv(
-        dataset_list_path,
-        index=False,
-        encoding="utf-8-sig",
-    )
-
-    print(
-        "\nDaftar dataset disimpan:",
-        dataset_list_path,
-    )
-
+    all_dataframes = []
 
     failed_datasets = []
-
-    print(
-        "\n========================================"
-    )
-
-    print(
-        "MULAI SCRAPING RAW DATA"
-    )
-
-    print(
-        "========================================"
-    )
 
     for i, dataset in enumerate(
         dataset_info,
@@ -460,15 +578,9 @@ def main():
 
         if not parent_id:
 
-            print(
-                "Parent ID tidak ditemukan."
+            failed_datasets.append(
+                dataset
             )
-
-            failed_datasets.append({
-                "judul": dataset["judul"],
-                "url": dataset["url"],
-                "parent_id": None,
-            })
 
             continue
 
@@ -478,112 +590,113 @@ def main():
 
         if not rows:
 
-            print(
-                "Dataset gagal diambil."
+            failed_datasets.append(
+                dataset
             )
-
-            failed_datasets.append({
-                "judul": dataset["judul"],
-                "url": dataset["url"],
-                "parent_id": parent_id,
-            })
 
             continue
 
         df = pd.DataFrame(rows)
 
-        df.columns = df.columns.str.replace(
-            "\ufeff",
-            "",
-            regex=False,
-        )
+        df = prepare_dataframe(df)
 
-        safe_title = create_safe_filename(
-            dataset["judul"]
-        )
+        all_dataframes.append(df)
 
-        filename = (
-            f"{safe_title}.parquet"
-        )
+        periode = "unknown"
 
-        filepath = (
-            RAW_DATA_DIR /
-            filename
-        )
+        if "periode" in df.columns:
 
-        df.to_parquet(
-            filepath,
-            index=False,
-        )
+            values = (
+                df["periode"]
+                .dropna()
+                .astype(str)
+                .unique()
+            )
 
-        print(
-            "Berhasil disimpan:",
-            filepath,
-        )
+            if len(values) > 0:
 
-        print(
-            "Rows:",
-            len(df),
+                periode = values[0]
+
+        save_raw_data(
+            df,
+            periode,
+            i,
         )
 
         time.sleep(2)
+
+    if not all_dataframes:
+
+        print(
+            "Tidak ada data yang berhasil diambil."
+        )
+
+        return
+
+    full_df = pd.concat(
+        all_dataframes,
+        ignore_index=True,
+    )
 
     print(
         "\n========================================"
     )
 
     print(
-        "SCRAPING SELESAI"
+        "TOTAL RAW DATA:",
+        f"{len(full_df):,}",
     )
 
     print(
         "========================================"
     )
 
+    tersier_provinsi = create_aggregation(
+        full_df,
+        status_penanaman_modal="PMA",
+        sektor_utama="Sektor Tersier",
+        group_by=[
+            "periode",
+            "provinsi",
+        ],
+    )
+
+    if not tersier_provinsi.empty:
+
+        save_final_data(
+            tersier_provinsi,
+            "bkpm_realisasi_pma_tersier_provinsi.csv",
+        )
+
+    konstruksi_provinsi = create_aggregation(
+        full_df,
+        status_penanaman_modal="PMA",
+        nama_sektor="Konstruksi",
+        group_by=[
+            "periode",
+            "provinsi",
+        ],
+    )
+
+    if not konstruksi_provinsi.empty:
+
+        save_final_data(
+            konstruksi_provinsi,
+            "bkpm_realisasi_pma_konstruksi_provinsi.csv",
+        )
+
     print(
-        "Dataset berhasil:",
-        len(dataset_info) - len(failed_datasets),
+        "\n========================================"
     )
 
     print(
-        "Dataset gagal:",
-        len(failed_datasets),
+        "ETL SELESAI"
     )
 
-    if failed_datasets:
+    print(
+        "========================================"
+    )
 
-        print(
-            "\nDataset yang gagal:"
-        )
-
-        for item in failed_datasets:
-
-            print(
-                "-",
-                item["judul"],
-                "| Parent ID:",
-                item["parent_id"],
-            )
-
-        failed_df = pd.DataFrame(
-            failed_datasets
-        )
-
-        failed_path = (
-            RAW_DATA_DIR /
-            "bkpm_failed_datasets.csv"
-        )
-
-        failed_df.to_csv(
-            failed_path,
-            index=False,
-            encoding="utf-8-sig",
-        )
-
-        print(
-            "\nDaftar dataset gagal disimpan:",
-            failed_path,
-        )
 
 if __name__ == "__main__":
     main()
