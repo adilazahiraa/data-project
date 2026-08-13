@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Scraped raw data
+data/raw/
+
+# Generated final data
+final/
+
+# Generated scraper metadata
+bkpm_dataset_list.csv
+bkpm_failed_datasets.csv
+
+# Environment
+.env
+
+# VS Code
+.vscode/
