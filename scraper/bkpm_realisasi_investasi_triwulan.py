@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import sys
 from pathlib import Path
 from io import BytesIO
 
@@ -10,7 +11,19 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
-from minio import Minio
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils.minio import (
+    create_client,
+    write_file,
+    upload_file,
+    read_file,
+    list_files,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -29,29 +42,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 MINIO_BUCKET = "maganghub"
 
-minio_client = Minio(
-    f"{os.getenv('MINIO_HOST')}:{os.getenv('MINIO_PORT')}",
-    access_key=os.getenv("MINIO_ACCESS_KEY"),
-    secret_key=os.getenv("MINIO_SECRET_KEY"),
-    secure=False,
-)
-
-def upload_to_minio(
-    data,
-    object_name,
-    content_type="application/octet-stream",
-):
-    data_stream = BytesIO(data)
-
-    minio_client.put_object(
-        MINIO_BUCKET,
-        object_name,
-        data_stream,
-        length=len(data),
-        content_type=content_type,
-    )
-
-    print(f"MinIO upload: {object_name}")
+minio_client = create_client()
 
 def create_session():
 
@@ -406,7 +397,9 @@ def save_raw_data(df, periode, index):
 
     object_name = f"bkpm/raw/{filename}"
 
-    upload_to_minio(
+    write_file(
+        minio_client,
+        MINIO_BUCKET,
         data,
         object_name,
         "application/octet-stream",
@@ -462,7 +455,9 @@ def save_processed_data(df, tahun_awal, tahun_akhir):
         f"{tahun_awal}_{tahun_akhir}.parquet"
     )
 
-    upload_to_minio(
+    write_file(
+        minio_client,
+        MINIO_BUCKET,
         data,
         object_name,
         "application/octet-stream",
@@ -583,7 +578,9 @@ def save_final_data(df, filename):
 
     object_name = f"bkpm/final/{filename}"
 
-    upload_to_minio(
+    write_file(
+        minio_client,
+        MINIO_BUCKET,
         csv_bytes,
         object_name,
         "text/csv",
