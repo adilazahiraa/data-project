@@ -13,10 +13,6 @@ from dotenv import load_dotenv
 from minio import Minio
 
 
-# =========================================================
-# CONFIG
-# =========================================================
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
@@ -29,11 +25,6 @@ QUERY = "Data Realisasi Investasi Triwulan"
 
 USE_EXISTING_RAW = False
 
-
-# =========================================================
-# MINIO CONFIG
-# =========================================================
-
 load_dotenv(PROJECT_ROOT / ".env")
 
 MINIO_BUCKET = "maganghub"
@@ -44,11 +35,6 @@ minio_client = Minio(
     secret_key=os.getenv("MINIO_SECRET_KEY"),
     secure=False,
 )
-
-
-# =========================================================
-# MINIO UPLOAD
-# =========================================================
 
 def upload_to_minio(
     data,
@@ -917,10 +903,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
         "========================================"
     )
 
-    # =========================================================
-    # 1. BKPM PMA KONSTRUKSI PROV
-    # =========================================================
-
     pma_konstruksi_provinsi = create_aggregation(
         full_df,
         status_penanaman_modal="PMA",
@@ -968,11 +950,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 "Provinsi",
             )
         )        
-
-
-    # =========================================================
-    # 2. BKPM PMDN KONSTRUKSI PROV
-    # =========================================================
 
     pmdn_konstruksi_provinsi = create_aggregation(
         full_df,
@@ -1023,10 +1000,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
         )        
 
 
-    # =========================================================
-    # 3. BKPM PMA KONSTRUKSI KAB/KOTA
-    # =========================================================
-
     pma_konstruksi_kabupaten_kota = create_aggregation(
         full_df,
         status_penanaman_modal="PMA",
@@ -1053,7 +1026,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
         })
 
-        # Drop data_y = 0
         pma_konstruksi_kabupaten_kota_final = (
             pma_konstruksi_kabupaten_kota_final[
                 pma_konstruksi_kabupaten_kota_final["data_y"].notna()
@@ -1062,7 +1034,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             .copy()
         )
 
-        # Koreksi nama wilayah
         pma_konstruksi_kabupaten_kota_final["kota"] = (
             pma_konstruksi_kabupaten_kota_final["kota"]
             .replace({
@@ -1082,10 +1053,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 "Kabupaten Kota",
             )
         )
-
-    # =========================================================
-    # 4. BKPM PMDN KONSTRUKSI KAB/KOTA
-    # =========================================================
 
     pmdn_konstruksi_kabupaten_kota = create_aggregation(
         full_df,
@@ -1113,7 +1080,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
         })
 
-        # Drop data_y = 0
         pmdn_konstruksi_kabupaten_kota_final = (
             pmdn_konstruksi_kabupaten_kota_final[
                 pmdn_konstruksi_kabupaten_kota_final["data_y"].notna()
@@ -1122,7 +1088,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             .copy()
         )
 
-        # Koreksi nama wilayah
         pmdn_konstruksi_kabupaten_kota_final["kota"] = (
             pmdn_konstruksi_kabupaten_kota_final["kota"]
             .replace({
@@ -1142,11 +1107,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 "Kabupaten Kota",
             )
         )        
-
-    # =========================================================
-    # BKPM PMA TANAMAN PANGAN, PERKEBUNAN, DAN PETERNAKAN
-    # KABUPATEN/KOTA
-    # =========================================================
 
     pma_tanaman_pangan_kabupaten_kota = create_aggregation(
         full_df,
@@ -1174,7 +1134,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
         })
 
-        # Drop data_y = 0
         pma_tanaman_pangan_kabupaten_kota_final = (
             pma_tanaman_pangan_kabupaten_kota_final[
                 pma_tanaman_pangan_kabupaten_kota_final["data_y"].notna()
@@ -1185,7 +1144,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             .copy()
         )
 
-        # Koreksi nama kabupaten/kota
         pma_tanaman_pangan_kabupaten_kota_final["kota"] = (
             pma_tanaman_pangan_kabupaten_kota_final["kota"]
             .replace({
@@ -1205,10 +1163,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 "Kabupaten Kota",
             )
         )
-    # =========================================================
-    # BKPM PMA KEHUTANAN
-    # KABUPATEN/KOTA
-    # =========================================================
 
     pma_kehutanan_kabupaten_kota = create_aggregation(
         full_df,
