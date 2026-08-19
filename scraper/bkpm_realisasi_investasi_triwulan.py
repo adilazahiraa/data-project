@@ -560,6 +560,7 @@ def save_final_data(
     status_penanaman_modal,
     nama_sektor,
     lokasi,
+    jenis_data="investasi",
 ):
 
     FINAL_DATA_DIR.mkdir(
@@ -607,12 +608,12 @@ def save_final_data(
         len(df),
     )
 
-    # Tambahkan nama data secara otomatis
     add_nama_data(
         generate_nama_data(
             status_penanaman_modal,
             nama_sektor,
             lokasi,
+            jenis_data,
         )
     )
 
@@ -701,7 +702,17 @@ def generate_nama_data(
     status_penanaman_modal,
     nama_sektor,
     lokasi,
+    jenis_data="investasi",
 ):
+    if jenis_data == "tenaga_kerja":
+        return (
+            f"Jumlah Penyerapan Tenaga Kerja "
+            f"{status_penanaman_modal} "
+            f"Sektor {nama_sektor} "
+            f"Menurut {lokasi} "
+            f"(Triwulan)"
+        )
+
     return (
         f"Realisasi Investasi "
         f"{status_penanaman_modal} "
@@ -778,7 +789,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
         full_df = load_existing_raw_data()
 
         if full_df.empty:
-
             return
 
     else:
@@ -791,15 +801,13 @@ def main(tahun_awal=2010, tahun_akhir=2026):
 
         print(
             "\nTotal dataset ditemukan:",
-            len(datasets),
+            len(datasets)
         )
 
         if not datasets:
-
             print(
                 "Tidak ada dataset ditemukan."
             )
-
             return
 
         dataset_info = []
@@ -878,7 +886,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 )
 
                 if len(values) > 0:
-
                     periode = values[0]
 
             save_raw_data(
@@ -907,181 +914,308 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             f"{len(full_df):,}"
         )
 
-        # Filter tahun
-        full_df = full_df[
-            full_df["periode"]
-            .astype(str)
-            .str[:4]
-            .astype(int)
-            .between(tahun_awal, tahun_akhir)
-        ].copy()
 
-        # Simpan processed ke MinIO
-        save_processed_data(
-            full_df,
+    # ========================================
+    # FILTER TAHUN
+    # ========================================
+
+    full_df = full_df[
+        full_df["periode"]
+        .astype(str)
+        .str[:4]
+        .astype(int)
+        .between(
             tahun_awal,
-            tahun_akhir,
+            tahun_akhir
         )
+    ].copy()
 
 
-        print(
-            "\n========================================"
-        )
+    # ========================================
+    # SIMPAN PROCESSED
+    # ========================================
 
-        print(
+    save_processed_data(
+        full_df,
+        tahun_awal,
+        tahun_akhir,
+    )
+
+
+    # ========================================
+    # MULAI TRANSFORM
+    # ========================================
+
+    print(
+        "\n========================================"
+    )
+
+    print(
         "MULAI TRANSFORM"
-        )
+    )
 
-        print(
-            "========================================"
-        )
+    print(
+        "========================================"
+    )
 
-        sektor_list = load_mapping_sektor()
+    sektor_list = load_mapping_sektor()
 
-        print(
-            f"Total sektor dari mapping: {len(sektor_list)}"
-        )
+    print(
+        f"Total sektor dari mapping: {len(sektor_list)}"
+    )
 
+    for sektor in sektor_list:
 
-        for sektor in sektor_list:
+        for status in ["PMA", "PMDN"]:
 
-            for status in ["PMA", "PMDN"]:
+            for lokasi, group_by in GRANULARITIES.items():
 
-                for lokasi, group_by in GRANULARITIES.items():
+                print(
+                    f"\nAgregasi: {status} | "
+                    f"{sektor} | {lokasi}"
+                )
+
+                hasil = create_aggregation(
+                    full_df,
+                    status_penanaman_modal=status,
+                    nama_sektor=sektor,
+                    group_by=group_by,
+                )
+
+                if hasil.empty:
+                    print(
+                        "Tidak ada data, dilewati."
+                    )
+                    continue
+
+                if status == "PMA":
+
+                    satuan = "US$ ribu"
+
+                    data_y = (
+                        hasil["investasi_us_ribu"]
+                    )
+
+                else:
+
+                    satuan = "Rp juta"
+
+                    data_y = (
+                        hasil["investasi_rp_juta"]
+                    )
+
+                if lokasi == "Provinsi":
+
+                    final_df = pd.DataFrame({
+                        "kota": pd.NA,
+
+                        "provinsi": (
+                            hasil["provinsi"]
+                        ),
+
+                        "negara": "Indonesia",
+
+                        "item": pd.NA,
+
+                        "satuan": satuan,
+
+                        "data_x": (
+                            hasil["periode"]
+                            .apply(periode_to_date)
+                        ),
+
+                        "data_y": data_y,
+
+                        "sumber": "BKPM",
+
+                        "nama_data_import":
+                            "https://data.bkpm.go.id/dataset?status=publik",
+                    })
+
+                elif lokasi == "Kabupaten Kota":
+
+                    final_df = pd.DataFrame({
+                        "kota": (
+                            hasil["kabupaten_kota"]
+                        ),
+
+                        "provinsi": pd.NA,
+
+                        "negara": "Indonesia",
+
+                        "item": pd.NA,
+
+                        "satuan": satuan,
+
+                        "data_x": (
+                            hasil["periode"]
+                            .apply(periode_to_date)
+                        ),
+
+                        "data_y": data_y,
+
+                        "sumber": "BKPM",
+
+                        "nama_data_import":
+                            "https://data.bkpm.go.id/dataset?status=publik",
+                    })
+
+                    # Konsistensi nama kabupaten/kota
+                    final_df["kota"] = (
+                        final_df["kota"]
+                        .replace({
+                            "Kabupaten Kendari":
+                                "Kota Kendari"
+                        })
+                    )
+
+                else:
 
                     print(
-                        f"\nAgregasi: {status} | "
-                        f"{sektor} | {lokasi}"
+                        f"Granularitas belum didukung: {lokasi}"
                     )
 
-                    hasil = create_aggregation(
-                        full_df,
-                        status_penanaman_modal=status,
-                        nama_sektor=sektor,
-                        group_by=group_by,
+                    continue
+
+                final_df = (
+                    final_df[
+                        final_df["data_y"].notna()
+                        & (
+                            final_df["data_y"] != 0
+                        )
+                    ]
+                    .copy()
+                )
+
+                if final_df.empty:
+
+                    print(
+                        "Tidak ada data setelah cleaning, "
+                        "dilewati."
                     )
 
-                    if hasil.empty:
-                        print(
-                            "Tidak ada data, dilewati."
-                        )
-                        continue
+                    continue
 
-                    if status == "PMA":
+                nama_data = generate_nama_data(
+                    status,
+                    sektor,
+                    lokasi,
+                )
 
-                        satuan = "US$ ribu"
-
-                        data_y = (
-                            hasil["investasi_us_ribu"]
-                        )
-
-                    else:
-
-                        satuan = "Rp juta"
-
-                        data_y = (
-                            hasil["investasi_rp_juta"]
-                        )
-
-                    if lokasi == "Provinsi":
-
-                        final_df = pd.DataFrame({
-                            "kota": pd.NA,
-
-                            "provinsi": (
-                                hasil["provinsi"]
-                            ),
-
-                            "negara": "Indonesia",
-
-                            "item": pd.NA,
-
-                            "satuan": satuan,
-
-                            "data_x": (
-                                hasil["periode"]
-                                .apply(periode_to_date)
-                            ),
-
-                            "data_y": data_y,
-
-                            "sumber": "BKPM",
-
-                            "nama_data_import":
-                                "https://data.bkpm.go.id/dataset?status=publik",
-                        })
-
-                    elif lokasi == "Kabupaten Kota":
-
-                        final_df = pd.DataFrame({
-                            "kota": (
-                                hasil["kabupaten_kota"]
-                            ),
-
-                            "provinsi": pd.NA,
-
-                            "negara": "Indonesia",
-
-                            "item": pd.NA,
-
-                            "satuan": satuan,
-
-                            "data_x": (
-                                hasil["periode"]
-                                .apply(periode_to_date)
-                            ),
-
-                            "data_y": data_y,
-
-                            "sumber": "BKPM",
-
-                            "nama_data_import":
-                                "https://data.bkpm.go.id/dataset?status=publik",
-                        })
-
-                        # Konsistensi nama kabupaten/kota
-                        final_df["kota"] = (
-                            final_df["kota"]
-                            .replace({
-                                "Kabupaten Kendari":
-                                    "Kota Kendari"
-                            })
-                        )
-
-                    else:
-
-                        print(
-                            f"Granularitas belum didukung: {lokasi}"
-                        )
-
-                        continue
-
-                    final_df = (
-                        final_df[
-                            final_df["data_y"].notna()
-                            & (
-                                final_df["data_y"] != 0
-                            )
-                        ]
-                        .copy()
-                    )
-
-                    if final_df.empty:
-
-                        print(
-                            "Tidak ada data setelah cleaning, "
-                            "dilewati."
-                        )
-
-                        continue
-
-                    nama_data = generate_nama_data(
-                        status,
+                nama_file_sektor = (
+                    re.sub(
+                        r"[^A-Za-z0-9]+",
+                        "_",
                         sektor,
-                        lokasi,
+                    )
+                    .strip("_")
+                    .lower()
+                )
+
+                nama_file_status = (
+                    status.lower()
+                )
+
+                nama_file_lokasi = (
+                    lokasi.lower()
+                    .replace(" ", "_")
+                )
+
+                filename = (
+                    f"bkpm_realisasi_"
+                    f"{nama_file_status}_"
+                    f"{nama_file_sektor}_"
+                    f"{nama_file_lokasi}.csv"
+                )
+
+                save_final_data(
+                    final_df,
+                    filename,
+                    status,
+                    sektor,
+                    lokasi,
+                )
+
+                print(
+                    f"Nama data: {nama_data}"
+                )
+
+
+                if lokasi == "Provinsi":
+
+                    tenaga_kerja_df = pd.DataFrame({
+                        "kota": pd.NA,
+
+                        "provinsi": hasil["provinsi"],
+
+                        "negara": "Indonesia",
+
+                        "item": pd.NA,
+
+                        "satuan": "Orang",
+
+                        "data_x": (
+                            hasil["periode"]
+                            .apply(periode_to_date)
+                        ),
+
+                        "data_y": hasil["tki"],
+
+                        "sumber": "BKPM",
+
+                        "nama_data_import":
+                            "https://data.bkpm.go.id/dataset?status=publik",
+                    })
+
+                else:
+
+                    tenaga_kerja_df = pd.DataFrame({
+                        "kota": hasil["kabupaten_kota"],
+
+                        "provinsi": pd.NA,
+
+                        "negara": "Indonesia",
+
+                        "item": pd.NA,
+
+                        "satuan": "Orang",
+
+                        "data_x": (
+                            hasil["periode"]
+                            .apply(periode_to_date)
+                        ),
+
+                        "data_y": hasil["tki"],
+
+                        "sumber": "BKPM",
+
+                        "nama_data_import":
+                            "https://data.bkpm.go.id/dataset?status=publik",
+                    })
+
+                    tenaga_kerja_df["kota"] = (
+                        tenaga_kerja_df["kota"]
+                        .replace({
+                            "Kabupaten Kendari": "Kota Kendari"
+                        })
                     )
 
-                    nama_file_sektor = (
+
+                # Cleaning
+                tenaga_kerja_df = (
+                    tenaga_kerja_df[
+                        tenaga_kerja_df["data_y"].notna()
+                        & (
+                            tenaga_kerja_df["data_y"] != 0
+                        )
+                    ]
+                    .copy()
+                )
+
+
+                if not tenaga_kerja_df.empty:
+
+                    nama_file_tki_sektor = (
                         re.sub(
                             r"[^A-Za-z0-9]+",
                             "_",
@@ -1091,45 +1225,44 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         .lower()
                     )
 
-                    nama_file_status = (
-                        status.lower()
-                    )
-
-                    nama_file_lokasi = (
-                        lokasi.lower()
-                        .replace(" ", "_")
-                    )
-
-                    filename = (
-                        f"bkpm_realisasi_"
-                        f"{nama_file_status}_"
-                        f"{nama_file_sektor}_"
-                        f"{nama_file_lokasi}.csv"
+                    filename_tki = (
+                        f"bkpm_jumlah_penyerapan_"
+                        f"tenaga_kerja_"
+                        f"{status.lower()}_"
+                        f"{nama_file_tki_sektor}_"
+                        f"{lokasi.lower().replace(' ', '_')}.csv"
                     )
 
                     save_final_data(
-                        final_df,
-                        filename,
+                        tenaga_kerja_df,
+                        filename_tki,
                         status,
                         sektor,
                         lokasi,
+                        jenis_data="tenaga_kerja",
                     )
 
                     print(
-                        f"Nama data: {nama_data}"
+                        f"Nama data: "
+                        f"{generate_nama_data(
+                            status,
+                            sektor,
+                            lokasi,
+                            "tenaga_kerja",
+                        )}"
                     )
 
-            print(
-                "\n========================================"
-            )
+        print(
+            "\n========================================"
+        )
 
-            print(
-                "ETL SELESAI"
-            )
-        
-            print(
-                "========================================"
-            )
+        print(
+            "ETL SELESAI"
+        )
+
+        print(
+            "========================================"
+        )
 
 if __name__ == "__main__":
 
