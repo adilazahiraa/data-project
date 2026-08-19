@@ -42,6 +42,11 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 MINIO_BUCKET = "maganghub"
 
+GRANULARITIES = {
+    "Provinsi": ["periode", "provinsi"],
+    "Kabupaten Kota": ["periode", "kabupaten_kota"],
+}
+
 minio_client = create_client()
 
 def create_session():
@@ -549,7 +554,13 @@ def create_aggregation(
     return result
 
 
-def save_final_data(df, filename):
+def save_final_data(
+    df,
+    filename,
+    status_penanaman_modal,
+    nama_sektor,
+    lokasi,
+):
 
     FINAL_DATA_DIR.mkdir(
         parents=True,
@@ -594,6 +605,15 @@ def save_final_data(df, filename):
     print(
         "Total rows:",
         len(df),
+    )
+
+    # Tambahkan nama data secara otomatis
+    add_nama_data(
+        generate_nama_data(
+            status_penanaman_modal,
+            nama_sektor,
+            lokasi,
+        )
     )
 
 def load_existing_raw_data():
@@ -719,6 +739,21 @@ def add_nama_data(nama_data):
 
     print(f"Nama data ditambahkan: {nama_data}")
 
+def load_mapping_sektor():
+    mapping_file = PROJECT_ROOT / "Mapping Sektor.xlsx"
+
+    mapping_df = pd.read_excel(
+        mapping_file
+    )
+
+    sektor_list = (
+        mapping_df["sektor_bkpm"]
+        .dropna()
+        .drop_duplicates()
+        .tolist()
+    )
+
+    return sektor_list
 
 def main(tahun_awal=2010, tahun_akhir=2026):
 
@@ -888,346 +923,213 @@ def main(tahun_awal=2010, tahun_akhir=2026):
             tahun_akhir,
         )
 
-    print(
-        "\n========================================"
-    )
 
-    print(
+        print(
+            "\n========================================"
+        )
+
+        print(
         "MULAI TRANSFORM"
-    )
-
-    print(
-        "========================================"
-    )
-
-    pma_konstruksi_provinsi = create_aggregation(
-        full_df,
-        status_penanaman_modal="PMA",
-        nama_sektor="Konstruksi",
-        group_by=[
-            "periode",
-            "provinsi",
-        ],
-    )
-
-    if not pma_konstruksi_provinsi.empty:
-
-        pma_konstruksi_provinsi_final = pd.DataFrame({
-            "kota": pd.NA,
-            "provinsi": pma_konstruksi_provinsi["provinsi"],
-            "negara": "Indonesia",
-            "item": pd.NA,
-            "satuan": "US$ ribu",
-            "data_x": pma_konstruksi_provinsi["periode"].apply(
-                periode_to_date
-            ),
-            "data_y": pma_konstruksi_provinsi["investasi_us_ribu"],
-            "sumber": "BKPM",
-            "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
-        })
-
-        # Drop data_y = 0
-        pma_konstruksi_provinsi_final = (
-            pma_konstruksi_provinsi_final[
-                pma_konstruksi_provinsi_final["data_y"].notna()
-                & (pma_konstruksi_provinsi_final["data_y"] != 0)
-            ]
-            .copy()
         )
 
-        save_final_data(
-            pma_konstruksi_provinsi_final,
-            "bkpm_realisasi_pma_konstruksi_provinsi.csv",
+        print(
+            "========================================"
         )
 
-        add_nama_data(
-            generate_nama_data(
-                "PMA",
-                "Konstruksi",
-                "Provinsi",
+        sektor_list = load_mapping_sektor()
+
+        print(
+            f"Total sektor dari mapping: {len(sektor_list)}"
+        )
+
+
+        for sektor in sektor_list:
+
+            for status in ["PMA", "PMDN"]:
+
+                for lokasi, group_by in GRANULARITIES.items():
+
+                    print(
+                        f"\nAgregasi: {status} | "
+                        f"{sektor} | {lokasi}"
+                    )
+
+                    hasil = create_aggregation(
+                        full_df,
+                        status_penanaman_modal=status,
+                        nama_sektor=sektor,
+                        group_by=group_by,
+                    )
+
+                    if hasil.empty:
+                        print(
+                            "Tidak ada data, dilewati."
+                        )
+                        continue
+
+                    if status == "PMA":
+
+                        satuan = "US$ ribu"
+
+                        data_y = (
+                            hasil["investasi_us_ribu"]
+                        )
+
+                    else:
+
+                        satuan = "Rp juta"
+
+                        data_y = (
+                            hasil["investasi_rp_juta"]
+                        )
+
+                    if lokasi == "Provinsi":
+
+                        final_df = pd.DataFrame({
+                            "kota": pd.NA,
+
+                            "provinsi": (
+                                hasil["provinsi"]
+                            ),
+
+                            "negara": "Indonesia",
+
+                            "item": pd.NA,
+
+                            "satuan": satuan,
+
+                            "data_x": (
+                                hasil["periode"]
+                                .apply(periode_to_date)
+                            ),
+
+                            "data_y": data_y,
+
+                            "sumber": "BKPM",
+
+                            "nama_data_import":
+                                "https://data.bkpm.go.id/dataset?status=publik",
+                        })
+
+                    elif lokasi == "Kabupaten Kota":
+
+                        final_df = pd.DataFrame({
+                            "kota": (
+                                hasil["kabupaten_kota"]
+                            ),
+
+                            "provinsi": pd.NA,
+
+                            "negara": "Indonesia",
+
+                            "item": pd.NA,
+
+                            "satuan": satuan,
+
+                            "data_x": (
+                                hasil["periode"]
+                                .apply(periode_to_date)
+                            ),
+
+                            "data_y": data_y,
+
+                            "sumber": "BKPM",
+
+                            "nama_data_import":
+                                "https://data.bkpm.go.id/dataset?status=publik",
+                        })
+
+                        # Konsistensi nama kabupaten/kota
+                        final_df["kota"] = (
+                            final_df["kota"]
+                            .replace({
+                                "Kabupaten Kendari":
+                                    "Kota Kendari"
+                            })
+                        )
+
+                    else:
+
+                        print(
+                            f"Granularitas belum didukung: {lokasi}"
+                        )
+
+                        continue
+
+                    final_df = (
+                        final_df[
+                            final_df["data_y"].notna()
+                            & (
+                                final_df["data_y"] != 0
+                            )
+                        ]
+                        .copy()
+                    )
+
+                    if final_df.empty:
+
+                        print(
+                            "Tidak ada data setelah cleaning, "
+                            "dilewati."
+                        )
+
+                        continue
+
+                    nama_data = generate_nama_data(
+                        status,
+                        sektor,
+                        lokasi,
+                    )
+
+                    nama_file_sektor = (
+                        re.sub(
+                            r"[^A-Za-z0-9]+",
+                            "_",
+                            sektor,
+                        )
+                        .strip("_")
+                        .lower()
+                    )
+
+                    nama_file_status = (
+                        status.lower()
+                    )
+
+                    nama_file_lokasi = (
+                        lokasi.lower()
+                        .replace(" ", "_")
+                    )
+
+                    filename = (
+                        f"bkpm_realisasi_"
+                        f"{nama_file_status}_"
+                        f"{nama_file_sektor}_"
+                        f"{nama_file_lokasi}.csv"
+                    )
+
+                    save_final_data(
+                        final_df,
+                        filename,
+                        status,
+                        sektor,
+                        lokasi,
+                    )
+
+                    print(
+                        f"Nama data: {nama_data}"
+                    )
+
+            print(
+                "\n========================================"
             )
-        )        
 
-    pmdn_konstruksi_provinsi = create_aggregation(
-        full_df,
-        status_penanaman_modal="PMDN",
-        nama_sektor="Konstruksi",
-        group_by=[
-            "periode",
-            "provinsi",
-        ],
-    )
-
-    if not pmdn_konstruksi_provinsi.empty:
-
-        pmdn_konstruksi_provinsi_final = pd.DataFrame({
-            "kota": pd.NA,
-            "provinsi": pmdn_konstruksi_provinsi["provinsi"],
-            "negara": "Indonesia",
-            "item": pd.NA,
-            "satuan": "Rp juta",
-            "data_x": pmdn_konstruksi_provinsi["periode"].apply(
-                periode_to_date
-            ),
-            "data_y": pmdn_konstruksi_provinsi["investasi_rp_juta"],
-            "sumber": "BKPM",
-            "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
-        })
-
-        # Drop data_y = 0
-        pmdn_konstruksi_provinsi_final = (
-            pmdn_konstruksi_provinsi_final[
-                pmdn_konstruksi_provinsi_final["data_y"].notna()
-                & (pmdn_konstruksi_provinsi_final["data_y"] != 0)
-            ]
-            .copy()
-        )
-
-        save_final_data(
-            pmdn_konstruksi_provinsi_final,
-            "bkpm_realisasi_pmdn_konstruksi_provinsi.csv",
-        )
-
-        add_nama_data(
-            generate_nama_data(
-                "PMDN",
-                "Konstruksi",
-                "Provinsi",
+            print(
+                "ETL SELESAI"
             )
-        )        
-
-
-    pma_konstruksi_kabupaten_kota = create_aggregation(
-        full_df,
-        status_penanaman_modal="PMA",
-        nama_sektor="Konstruksi",
-        group_by=[
-            "periode",
-            "kabupaten_kota",
-        ],
-    )
-
-    if not pma_konstruksi_kabupaten_kota.empty:
-
-        pma_konstruksi_kabupaten_kota_final = pd.DataFrame({
-            "kota": pma_konstruksi_kabupaten_kota["kabupaten_kota"],
-            "provinsi": pd.NA,
-            "negara": "Indonesia",
-            "item": pd.NA,
-            "satuan": "US$ ribu",
-            "data_x": pma_konstruksi_kabupaten_kota["periode"].apply(
-                periode_to_date
-            ),
-            "data_y": pma_konstruksi_kabupaten_kota["investasi_us_ribu"],
-            "sumber": "BKPM",
-            "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
-        })
-
-        pma_konstruksi_kabupaten_kota_final = (
-            pma_konstruksi_kabupaten_kota_final[
-                pma_konstruksi_kabupaten_kota_final["data_y"].notna()
-                & (pma_konstruksi_kabupaten_kota_final["data_y"] != 0)
-            ]
-            .copy()
-        )
-
-        pma_konstruksi_kabupaten_kota_final["kota"] = (
-            pma_konstruksi_kabupaten_kota_final["kota"]
-            .replace({
-                "Kabupaten Kendari": "Kota Kendari"
-            })
-        )
-
-        save_final_data(
-            pma_konstruksi_kabupaten_kota_final,
-            "bkpm_realisasi_pma_konstruksi_kabupaten_kota.csv",
-        )
-
-        add_nama_data(
-            generate_nama_data(
-                "PMA",
-                "Konstruksi",
-                "Kabupaten Kota",
+        
+            print(
+                "========================================"
             )
-        )
-
-    pmdn_konstruksi_kabupaten_kota = create_aggregation(
-        full_df,
-        status_penanaman_modal="PMDN",
-        nama_sektor="Konstruksi",
-        group_by=[
-            "periode",
-            "kabupaten_kota",
-        ],
-    )
-
-    if not pmdn_konstruksi_kabupaten_kota.empty:
-
-        pmdn_konstruksi_kabupaten_kota_final = pd.DataFrame({
-            "kota": pmdn_konstruksi_kabupaten_kota["kabupaten_kota"],
-            "provinsi": pd.NA,
-            "negara": "Indonesia",
-            "item": pd.NA,
-            "satuan": "Rp juta",
-            "data_x": pmdn_konstruksi_kabupaten_kota["periode"].apply(
-                periode_to_date
-            ),
-            "data_y": pmdn_konstruksi_kabupaten_kota["investasi_rp_juta"],
-            "sumber": "BKPM",
-            "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
-        })
-
-        pmdn_konstruksi_kabupaten_kota_final = (
-            pmdn_konstruksi_kabupaten_kota_final[
-                pmdn_konstruksi_kabupaten_kota_final["data_y"].notna()
-                & (pmdn_konstruksi_kabupaten_kota_final["data_y"] != 0)
-            ]
-            .copy()
-        )
-
-        pmdn_konstruksi_kabupaten_kota_final["kota"] = (
-            pmdn_konstruksi_kabupaten_kota_final["kota"]
-            .replace({
-                "Kabupaten Kendari": "Kota Kendari"
-            })
-        )
-
-        save_final_data(
-            pmdn_konstruksi_kabupaten_kota_final,
-            "bkpm_realisasi_pmdn_konstruksi_kabupaten_kota.csv",
-        )
-
-        add_nama_data(
-            generate_nama_data(
-                "PMDN",
-                "Konstruksi",
-                "Kabupaten Kota",
-            )
-        )        
-
-    pma_tanaman_pangan_kabupaten_kota = create_aggregation(
-        full_df,
-        status_penanaman_modal="PMA",
-        nama_sektor="Tanaman Pangan, Perkebunan, dan Peternakan",
-        group_by=[
-            "periode",
-            "kabupaten_kota",
-        ],
-    )
-
-    if not pma_tanaman_pangan_kabupaten_kota.empty:
-
-        pma_tanaman_pangan_kabupaten_kota_final = pd.DataFrame({
-            "kota": pma_tanaman_pangan_kabupaten_kota["kabupaten_kota"],
-            "provinsi": pd.NA,
-            "negara": "Indonesia",
-            "item": pd.NA,
-            "satuan": "US$ ribu",
-            "data_x": pma_tanaman_pangan_kabupaten_kota["periode"].apply(
-                periode_to_date
-            ),
-            "data_y": pma_tanaman_pangan_kabupaten_kota["investasi_us_ribu"],
-            "sumber": "BKPM",
-            "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
-        })
-
-        pma_tanaman_pangan_kabupaten_kota_final = (
-            pma_tanaman_pangan_kabupaten_kota_final[
-                pma_tanaman_pangan_kabupaten_kota_final["data_y"].notna()
-                & (
-                    pma_tanaman_pangan_kabupaten_kota_final["data_y"] != 0
-                )
-            ]
-            .copy()
-        )
-
-        pma_tanaman_pangan_kabupaten_kota_final["kota"] = (
-            pma_tanaman_pangan_kabupaten_kota_final["kota"]
-            .replace({
-                "Kabupaten Kendari": "Kota Kendari"
-            })
-        )
-
-        save_final_data(
-            pma_tanaman_pangan_kabupaten_kota_final,
-            "bkpm_realisasi_pma_tanaman_pangan_perkebunan_peternakan_kabupaten_kota.csv",
-        )
-
-        add_nama_data(
-            generate_nama_data(
-                "PMA",
-                "Tanaman Pangan, Perkebunan, dan Peternakan",
-                "Kabupaten Kota",
-            )
-        )
-
-    pma_kehutanan_kabupaten_kota = create_aggregation(
-        full_df,
-        status_penanaman_modal="PMA",
-        nama_sektor="Kehutanan",
-        group_by=[
-            "periode",
-            "kabupaten_kota",
-        ],
-    )
-
-    if not pma_kehutanan_kabupaten_kota.empty:
-
-        pma_kehutanan_kabupaten_kota_final = pd.DataFrame({
-            "kota": pma_kehutanan_kabupaten_kota["kabupaten_kota"],
-            "provinsi": pd.NA,
-            "negara": "Indonesia",
-            "item": pd.NA,
-            "satuan": "US$ ribu",
-            "data_x": pma_kehutanan_kabupaten_kota["periode"].apply(
-                periode_to_date
-            ),
-            "data_y": pma_kehutanan_kabupaten_kota["investasi_us_ribu"],
-            "sumber": "BKPM",
-            "nama_data_import": "https://data.bkpm.go.id/dataset?status=publik",
-        })
-
-        pma_kehutanan_kabupaten_kota_final = (
-            pma_kehutanan_kabupaten_kota_final[
-                pma_kehutanan_kabupaten_kota_final["data_y"].notna()
-                & (
-                    pma_kehutanan_kabupaten_kota_final["data_y"] != 0
-                )
-            ]
-            .copy()
-        )
-
-        pma_kehutanan_kabupaten_kota_final["kota"] = (
-            pma_kehutanan_kabupaten_kota_final["kota"]
-            .replace({
-                "Kabupaten Kendari": "Kota Kendari"
-            })
-        )
-
-        save_final_data(
-            pma_kehutanan_kabupaten_kota_final,
-            "bkpm_realisasi_pma_kehutanan_kabupaten_kota.csv",
-        )
-
-        add_nama_data(
-            generate_nama_data(
-                "PMA",
-                "Kehutanan",
-                "Kabupaten Kota",
-            )
-        )
-
-    print(
-        "\n========================================"
-    )
-
-    print(
-        "ETL SELESAI"
-    )
- 
-    print(
-        "========================================"
-    )
 
 if __name__ == "__main__":
 
