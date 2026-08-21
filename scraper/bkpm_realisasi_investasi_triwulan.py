@@ -1646,6 +1646,24 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         f"{len(duplicates)} baris duplicate."
                     )
 
+                if filename == "bkpm_realisasi_pmdn_sektor_konstruksi_kabupaten_kota.csv":
+                    final_df = final_df[
+                        ~final_df["kota"].astype(str).str.strip().isin([
+                            "Kota Kendari",
+                            "Kabupaten Kendari",
+                        ])
+                    ].copy()
+
+                    print(
+                        "Kendari tersisa:",
+                        final_df[
+                            final_df["kota"].astype(str).str.strip().isin([
+                                "Kota Kendari",
+                                "Kabupaten Kendari",
+                            ])
+                        ].shape[0]
+                    )
+
                 etl.save_final_data(
                     final_df,
                     filename,
