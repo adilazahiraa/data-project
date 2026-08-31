@@ -1011,6 +1011,88 @@ class BKPMETL:
 
         return mapping_df
 
+def fetch(params=None):
+    params = params or {}
+
+    tahun_awal = int(
+        params.get("tahun_awal", 2010)
+    )
+
+    tahun_akhir = int(
+        params.get("tahun_akhir", 2026)
+    )
+
+    scraper = BKPMScraper()
+
+    if USE_EXISTING_RAW:
+
+        full_df = (
+            scraper.load_existing_raw_data()
+        )
+
+        if full_df.empty:
+            return pd.DataFrame()
+
+    else:
+
+        datasets = (
+            scraper.get_dataset_links()
+        )
+
+        if not datasets:
+            return pd.DataFrame()
+
+        all_dataframes = []
+
+        for i, dataset in enumerate(
+            datasets,
+            start=1,
+        ):
+
+            parent_id = (
+                scraper.get_parent_id(
+                    dataset["url"]
+                )
+            )
+
+            if not parent_id:
+                continue
+
+            rows = scraper.get_data(
+                parent_id
+            )
+
+            if not rows:
+                continue
+
+            df = pd.DataFrame(rows)
+
+            df = scraper.prepare_dataframe(
+                df
+            )
+
+            all_dataframes.append(df)
+
+        if not all_dataframes:
+            return pd.DataFrame()
+
+        full_df = concat_dataframes(
+            all_dataframes
+        )
+
+    full_df = full_df[
+        full_df["periode"]
+        .astype(str)
+        .str[:4]
+        .astype(int)
+        .between(
+            tahun_awal,
+            tahun_akhir,
+        )
+    ].copy()
+
+    return full_df
+
 def main(tahun_awal=2010, tahun_akhir=2026):
 
     print(
