@@ -496,6 +496,19 @@ class SKNBIETL:
             "========================================"
         )
 
+def fetch(params=None):
+    params = params or {}
+
+    blok = params.get("blok", "Kota Asal")
+
+    etl = SKNBIETL()
+
+    df = etl.scraper.load_raw_data()
+    df = etl.scraper.prepare_dataframe()
+
+    final_df = etl.create_data(df, blok)
+
+    return final_df
 
 def main():
 

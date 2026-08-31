@@ -1284,6 +1284,8 @@ class BPSETL:
 
         return df_final
 
+def fetch(params=None):
+    return scrape_all(save_raw=False)
 
 def main():
 
