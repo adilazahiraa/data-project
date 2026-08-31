@@ -1,18 +1,32 @@
 import sys
-import pandas as pd
-
 from pathlib import Path
+
+import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-sys.path.insert(
-    0,
-    str(PROJECT_ROOT)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+from utils.data import (
+    normalize_dataframe,
+    find_duplicates,
 )
 
-from utils.minio import create_client, write_file
+from utils.file import (
+    read_parquet,
+    save_csv,
+)
+
+from utils.storage import (
+    get_minio_client,
+    upload_file,
+)
+
 
 MINIO_BUCKET = "maganghub"
+
 
 RAW_DATA_DIR = (
     PROJECT_ROOT
@@ -22,6 +36,7 @@ RAW_DATA_DIR = (
     / "sknbi_regional"
 )
 
+
 FINAL_DATA_DIR = (
     PROJECT_ROOT
     / "final"
@@ -29,10 +44,12 @@ FINAL_DATA_DIR = (
     / "sknbi_regional"
 )
 
+
 RAW_FILE = (
     RAW_DATA_DIR
     / "bi_sknbi_regional_raw_Maret_September_2025.parquet"
 )
+
 
 NAMA_DATA = {
 
@@ -42,27 +59,19 @@ NAMA_DATA = {
 
     "Kota Tujuan":
         "Nilai Transaksi (Kliring Kredit) "
-        "Menurut Kota Tujuan Menurut Provinsi"
+        "Menurut Kota Tujuan Menurut Provinsi",
 }
+
 
 class SKNBIScraper:
 
     def __init__(self):
 
-        self.minio_client = create_client()
+        self.minio_client = get_minio_client()
 
-        self.RAW_DATA_DIR = (
-            PROJECT_ROOT
-            / "data"
-            / "raw"
-            / "bi"
-            / "sknbi_regional"
-        )
+        self.RAW_DATA_DIR = RAW_DATA_DIR
+        self.RAW_FILE = RAW_FILE
 
-        self.RAW_FILE = (
-            self.RAW_DATA_DIR
-            / "bi_sknbi_regional_raw_Maret_September_2025.parquet"
-        )
 
     def load_raw_data(self):
 
@@ -70,19 +79,15 @@ class SKNBIScraper:
         print("LOAD RAW DATA BI")
         print("==============================")
 
-        print(
-            "FILE:",
-            self.RAW_FILE
-        )
+        print("FILE:", self.RAW_FILE)
 
         if not self.RAW_FILE.exists():
-
             raise FileNotFoundError(
                 f"Raw file tidak ditemukan: "
                 f"{self.RAW_FILE}"
             )
 
-        df = pd.read_parquet(
+        df = read_parquet(
             self.RAW_FILE
         )
 
@@ -98,125 +103,48 @@ class SKNBIScraper:
 
         return df
 
-    def prepare_dataframe(
-        self,
-        df
-    ):
 
-        df = df.copy()
+    def prepare_dataframe(self, df):
 
-        # Pastikan tanggal
-        df["data_x"] = pd.to_datetime(
-            df["data_x"],
-            errors="coerce"
+        df = normalize_dataframe(
+            df,
+            text_columns=[
+                "indikator",
+                "blok",
+                "wilayah",
+                "satuan",
+                "sumber",
+            ],
+            date_columns=[
+                "data_x",
+            ],
+            numeric_columns=[
+                "data_y",
+            ],
         )
-
-        df["data_y"] = pd.to_numeric(
-            df["data_y"],
-            errors="coerce"
-        )
-
-        text_columns = [
-            "indikator",
-            "blok",
-            "wilayah",
-            "satuan",
-            "sumber"
-        ]
-
-        for column in text_columns:
-
-            if column in df.columns:
-
-                df[column] = (
-                    df[column]
-                    .astype("string")
-                    .str.strip()
-                )
 
         return df
-
-
-    def save_raw_data(
-        self,
-        df
-    ):
-
-        self.RAW_DATA_DIR.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        df.to_parquet(
-            self.RAW_FILE,
-            index=False
-        )
-
-        print("\n==============================")
-        print("RAW PARQUET DISIMPAN")
-        print("==============================")
-
-        print(
-            "FILE:",
-            self.RAW_FILE
-        )
-
-        with open(
-            self.RAW_FILE,
-            "rb"
-        ) as f:
-
-            parquet_bytes = f.read()
-
-        object_name = (
-            "bi/raw/"
-            "bi_sknbi_regional_raw_Maret_September_2025.parquet"
-        )
-
-        write_file(
-            self.minio_client,
-            MINIO_BUCKET,
-            parquet_bytes,
-            object_name,
-            "application/octet-stream"
-        )
-
-        print(
-            "\nRAW PARQUET DI-UPLOAD KE MINIO:"
-        )
-
-        print(
-            f"{MINIO_BUCKET}/{object_name}"
-        )
 
 
     def upload_existing_raw_to_minio(self):
 
         if not self.RAW_FILE.exists():
-
             raise FileNotFoundError(
                 f"Raw file tidak ditemukan: "
                 f"{self.RAW_FILE}"
             )
-
-        with open(
-            self.RAW_FILE,
-            "rb"
-        ) as f:
-
-            parquet_bytes = f.read()
 
         object_name = (
             "bi/raw/"
             "bi_sknbi_regional_raw_Maret_September_2025.parquet"
         )
 
-        write_file(
+        upload_file(
             self.minio_client,
             MINIO_BUCKET,
-            parquet_bytes,
+            self.RAW_FILE,
             object_name,
-            "application/octet-stream"
+            "application/octet-stream",
         )
 
         print(
@@ -226,53 +154,55 @@ class SKNBIScraper:
         print(
             f"{MINIO_BUCKET}/{object_name}"
         )
+
 
 class SKNBIETL:
 
     def __init__(self):
 
         self.scraper = SKNBIScraper()
-        self.minio_client = create_client()
 
-        self.FINAL_DATA_DIR = (
-            PROJECT_ROOT
-            / "final"
-            / "bi"
-            / "sknbi_regional"
+        self.minio_client = (
+            self.scraper.minio_client
         )
+
+        self.FINAL_DATA_DIR = FINAL_DATA_DIR
 
         self.FINAL_DATA_DIR.mkdir(
             parents=True,
-            exist_ok=True
+            exist_ok=True,
         )
 
-    def filter_nilai_transaksi(
-        self,
-        df
-    ):
+
+    def filter_nilai_transaksi(self, df):
 
         return df[
             df["indikator"]
             == "Nilai Transaksi (Kliring Kredit)"
         ].copy()
 
+
     def create_data(
         self,
         df,
-        blok
+        blok,
     ):
 
         print("\n==============================")
         print(
             "CREATE DATA:",
-            blok
+            blok,
         )
         print("==============================")
 
+
+        # FILTER INDIKATOR
         df = self.filter_nilai_transaksi(
             df
         )
 
+
+        # FILTER BLOK
         df = df[
             df["blok"] == blok
         ].copy()
@@ -282,78 +212,94 @@ class SKNBIETL:
 
             print(
                 "Tidak ada data untuk:",
-                blok
+                blok,
             )
 
             return pd.DataFrame()
 
+
+        # BENTUK DATA STANDARD
         final_df = pd.DataFrame({
 
-        "kabkota": pd.NA,
+            "kabkota": pd.NA,
 
-        "provinsi": df["wilayah"],
+            "provinsi": (
+                df["wilayah"]
+            ),
 
-        "nama_indikator": NAMA_DATA[blok],
+            "nama_indikator": (
+                NAMA_DATA[blok]
+            ),
 
-        "nama_item": pd.NA,
+            "nama_item": pd.NA,
 
-        "idnamadata": pd.NA,
+            "idnamadata": pd.NA,
 
-        "data_x": pd.to_datetime(
-            df["data_x"]
-        ),
+            "data_x": (
+                df["data_x"]
+            ),
 
-        "data_y": pd.to_numeric(
-            df["data_y"],
-            errors="coerce"
-        ),
+            "data_y": (
+                pd.to_numeric(
+                    df["data_y"],
+                    errors="coerce",
+                )
+            ),
 
-        "satuan": "Rp miliar",
+            "satuan": "Rp miliar",
 
-         "sumber": "Bank Indonesia (BI)",
+            "sumber": (
+                "Bank Indonesia (BI)"
+            ),
 
-        "nama_data_import": "https://www.bi.go.id/id/statistik/ekonomi-keuangan/spip/Default.aspx",
+            "nama_data_import": (
+                "https://www.bi.go.id/"
+                "id/statistik/ekonomi-keuangan/"
+                "spip/Default.aspx"
+            ),
 
-        "note": (
-            "Data SKNBI Regional "
-            "berdasarkan SPIP "
-            "September 2025"
-        )
-    })
+            "note": (
+                "Data SKNBI Regional "
+                "berdasarkan SPIP "
+                "September 2025"
+            ),
+        })
 
+
+        # DATA Y KOSONG DIBUANG
         final_df = final_df[
             final_df["data_y"].notna()
         ].copy()
 
+
+        # SORT
         final_df = (
             final_df
             .sort_values(
                 [
                     "data_x",
-                    "provinsi"
+                    "provinsi",
                 ]
             )
-            .reset_index(
-                drop=True
-            )
+            .reset_index(drop=True)
         )
 
+
+        # FORMAT TANGGAL FINAL
         final_df["data_x"] = (
             final_df["data_x"]
             .dt.strftime("%d-%m-%Y")
         )
 
-        key_columns = [
-            "provinsi",
-            "data_x"
-        ]
 
-        duplicates = final_df[
-            final_df.duplicated(
-                subset=key_columns,
-                keep=False
-            )
-        ]
+        # CEK DUPLICATE
+        duplicates = find_duplicates(
+            final_df,
+            subset=[
+                "provinsi",
+                "data_x",
+            ],
+        )
 
 
         if not duplicates.empty:
@@ -365,8 +311,11 @@ class SKNBIETL:
 
             print(
                 duplicates[
-                    key_columns
-                    + ["data_y"]
+                    [
+                        "provinsi",
+                        "data_x",
+                        "data_y",
+                    ]
                 ].to_string(
                     index=False
                 )
@@ -381,77 +330,69 @@ class SKNBIETL:
 
         return final_df
 
-    def generate_nama_data(
-        self,
-        blok
-    ):
 
-        return NAMA_DATA[
-            blok
-        ]
+    def generate_nama_data(self, blok):
+
+        return NAMA_DATA[blok]
+
 
     def save_final_data(
         self,
         df,
         filename,
-        nama_data
+        nama_data,
     ):
-        """
-        Simpan final CSV ke lokal
-        dan upload ke MinIO.
-        """
 
-        FINAL_DATA_DIR.mkdir(
-            parents=True,
-            exist_ok=True
+        filepath = (
+            self.FINAL_DATA_DIR
+            / filename
         )
 
-        filepath = FINAL_DATA_DIR / filename
 
-        df.to_csv(
+        save_csv(
+            df,
             filepath,
-            index=False,
-            encoding="utf-8-sig"
         )
 
-        print("\nFinal data disimpan:")
+
+        print(
+            "\nFinal data disimpan:"
+        )
+
         print(filepath)
 
-        csv_bytes = (
-            df.to_csv(
-                index=False,
-                encoding="utf-8-sig"
-            )
-            .encode("utf-8-sig")
-        )
 
         object_name = (
             f"bi/final/{filename}"
         )
 
-        write_file(
+
+        upload_file(
             self.minio_client,
             MINIO_BUCKET,
-            csv_bytes,
+            filepath,
             object_name,
-            "text/csv"
+            "text/csv",
         )
+
 
         print(
             "Final data di-upload ke MinIO:"
         )
+
         print(
             f"{MINIO_BUCKET}/{object_name}"
         )
 
+
         print(
             "Nama data:",
-            nama_data
+            nama_data,
         )
 
         print(
             "Total rows:",
-            len(df)
+            len(df),
         )
 
 
@@ -461,25 +402,31 @@ class SKNBIETL:
             "\n========================================"
         )
 
-        print(
-            "SKNBI ETL"
-        )
+        print("SKNBI ETL")
 
         print(
             "========================================"
         )
 
+
+        # RAW → MINIO
         self.scraper.upload_existing_raw_to_minio()
 
+
+        # LOAD RAW
         df = self.scraper.load_raw_data()
 
+
+        # NORMALIZE
         df = self.scraper.prepare_dataframe(
             df
         )
 
+
+        # PROCESS MASING-MASING BLOK
         for blok in [
             "Kota Asal",
-            "Kota Tujuan"
+            "Kota Tujuan",
         ]:
 
             print(
@@ -489,53 +436,66 @@ class SKNBIETL:
 
             final_df = self.create_data(
                 df,
-                blok
+                blok,
             )
 
 
             if final_df.empty:
-
                 continue
 
+
             print("\nSAMPLE:")
+
             print(
-                final_df.head(10).to_string(
+                final_df
+                .head(10)
+                .to_string(
                     index=False
                 )
             )
 
-            nama_data = self.generate_nama_data(
-                blok
+
+            nama_data = (
+                self.generate_nama_data(
+                    blok
+                )
             )
 
+
             if blok == "Kota Asal":
+
                 filename = (
                     "bi_sknbi_nilai_transaksi_"
-                    "kliring_kredit_kota_asal_provinsi.csv"
+                    "kliring_kredit_"
+                    "kota_asal_provinsi.csv"
                 )
+
             else:
+
                 filename = (
                     "bi_sknbi_nilai_transaksi_"
-                    "kliring_kredit_kota_tujuan_provinsi.csv"
+                    "kliring_kredit_"
+                    "kota_tujuan_provinsi.csv"
                 )
+
 
             self.save_final_data(
                 final_df,
                 filename,
-                nama_data
+                nama_data,
             )
+
 
         print(
             "\n========================================"
         )
 
-        print(
-            "ETL SELESAI"
-        )
+        print("ETL SELESAI")
 
         print(
             "========================================"
         )
+
 
 def main():
 
@@ -543,6 +503,6 @@ def main():
 
     etl.run()
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     main()

@@ -1,35 +1,47 @@
-import os
 import re
 import time
 import sys
 from pathlib import Path
-from io import BytesIO
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from dotenv import load_dotenv
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.minio import (
-    create_client,
-    write_file,
-    upload_file,
-    read_file,
-    list_files,
+
+from utils.api import (
+    create_session,
 )
 
+from utils.data import (
+    normalize_dataframe,
+    filter_dataframe,
+    filter_not_null,
+    filter_nonzero,
+    aggregate_dataframe,
+    find_duplicates,
+    concat_dataframes,
+    format_year_end,
+    format_quarter_end,
+    sanitize_filename,
+)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from utils.file import (
+    read_parquet,
+    save_csv,
+    dataframe_to_bytes,
+)
 
-RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
-FINAL_DATA_DIR = PROJECT_ROOT / "final"
+from utils.storage import (
+    get_minio_client,
+    upload_bytes,
+)
+
 
 BASE_URL = "https://data.bkpm.go.id"
 SEARCH_URL = f"{BASE_URL}/cari-data"
@@ -38,62 +50,52 @@ QUERY = "Data Realisasi Investasi Triwulan"
 
 USE_EXISTING_RAW = True
 
-load_dotenv(PROJECT_ROOT / ".env")
-
 MINIO_BUCKET = "maganghub"
 
+
+RAW_DATA_DIR = (
+    PROJECT_ROOT / "data" / "raw" / "bkpm"
+)
+
+FINAL_DATA_DIR = (
+    PROJECT_ROOT / "final"
+)
+
+
 GRANULARITIES = {
-    "Provinsi": ["periode", "provinsi"],
-    "Kabupaten Kota": ["periode", "kabupaten_kota"],
-    "Negara": ["periode", "negara"],
+    "Provinsi": [
+        "periode",
+        "provinsi",
+    ],
+
+    "Kabupaten Kota": [
+        "periode",
+        "kabupaten_kota",
+    ],
+
+    "Negara": [
+        "periode",
+        "negara",
+    ],
 }
+
 
 class BKPMScraper:
 
     def __init__(self):
 
         self.RAW_DATA_DIR = (
-            PROJECT_ROOT / "data" / "raw"
+            RAW_DATA_DIR
         )
 
-        self.session = self.create_session()
-
-        self.minio_client = create_client()
-
-    def create_session(self):
-
-        retry_strategy = Retry(
-            total=5,
-            connect=5,
-            read=5,
-            backoff_factor=2,
-            status_forcelist=[
-                429,
-                500,
-                502,
-                503,
-                504,
-            ],
-            allowed_methods=["GET"],
+        self.session = (
+            create_session()
         )
 
-        adapter = HTTPAdapter(
-            max_retries=retry_strategy
+        self.minio_client = (
+            get_minio_client()
         )
 
-        session = requests.Session()
-
-        session.mount(
-            "http://",
-            adapter
-        )
-
-        session.mount(
-            "https://",
-            adapter
-        )
-
-        return session
 
     def get_dataset_links(self):
 
@@ -101,16 +103,20 @@ class BKPMScraper:
 
         page = 1
 
+
         while True:
 
             print(
-                f"\nMencari dataset - halaman {page}"
+                f"\nMencari dataset - "
+                f"halaman {page}"
             )
+
 
             params = {
                 "query": QUERY,
                 "page": page,
             }
+
 
             response = self.session.get(
                 SEARCH_URL,
@@ -118,83 +124,109 @@ class BKPMScraper:
                 timeout=30,
             )
 
+
             print(
                 "Status:",
-                response.status_code
+                response.status_code,
             )
+
 
             if response.status_code != 200:
 
                 print(
-                    "Gagal mengambil halaman pencarian."
+                    "Gagal mengambil "
+                    "halaman pencarian."
                 )
 
                 break
+
 
             soup = BeautifulSoup(
                 response.text,
                 "html.parser",
             )
 
+
             links = soup.select(
                 'a[href*="/dataset-detail/"]'
             )
+
 
             print(
                 "Link dataset ditemukan:",
                 len(links),
             )
 
+
             if not links:
                 break
 
+
             new_links = 0
+
 
             for link in links:
 
-                href = link.get("href")
+                href = link.get(
+                    "href"
+                )
+
 
                 if not href:
                     continue
+
 
                 url = requests.compat.urljoin(
                     BASE_URL,
                     href,
                 )
 
+
                 title = link.find_parent(
                     class_="card-content"
                 )
 
+
                 if title:
 
-                    title_element = title.find("h5")
+                    title_element = (
+                        title.find("h5")
+                    )
+
 
                     if title_element:
 
                         title_text = (
-                            title_element.get_text(
+                            title_element
+                            .get_text(
                                 strip=True
                             )
                         )
 
                     else:
 
-                        title_text = link.get_text(
-                            strip=True
+                        title_text = (
+                            link.get_text(
+                                strip=True
+                            )
                         )
 
                 else:
 
-                    title_text = link.get_text(
-                        strip=True
+                    title_text = (
+                        link.get_text(
+                            strip=True
+                        )
                     )
 
+
                 if (
-                    "Data Realisasi Investasi Triwulan"
+                    "Data Realisasi "
+                    "Investasi Triwulan"
                     not in title_text
                 ):
                     continue
+
 
                 if url not in [
                     item["url"]
@@ -202,76 +234,102 @@ class BKPMScraper:
                 ]:
 
                     datasets.append({
-                        "judul": title_text,
-                        "url": url,
+
+                        "judul":
+                            title_text,
+
+                        "url":
+                            url,
+
                     })
 
                     new_links += 1
 
+
             print(
                 "Dataset baru:",
-                new_links
+                new_links,
             )
+
 
             if new_links == 0:
                 break
 
+
             page += 1
+
 
             if page > 100:
 
                 print(
-                    "Berhenti karena batas halaman."
+                    "Berhenti karena "
+                    "batas halaman."
                 )
 
                 break
 
+
             time.sleep(0.5)
+
 
         return datasets
 
 
-    def get_parent_id(self, dataset_url):
+    def get_parent_id(
+        self,
+        dataset_url,
+    ):
 
         response = self.session.get(
             dataset_url,
             timeout=30,
         )
 
+
         if response.status_code != 200:
 
             print(
                 "Gagal membuka:",
-                dataset_url
+                dataset_url,
             )
 
             return None
 
-        html = response.text
 
         match = re.search(
-            r'<input[^>]*value=["\']([^"\']+)["\'][^>]*name=["\']parent_id["\']',
-            html,
+            r'<input[^>]*value=["\']'
+            r'([^"\']+)["\'][^>]*'
+            r'name=["\']parent_id["\']',
+            response.text,
         )
+
 
         if match:
             return match.group(1)
 
+
         return None
 
 
-    def get_data(self, parent_id):
+    def get_data(
+        self,
+        parent_id,
+    ):
 
         all_rows = []
 
         start = 0
+
         length = 10000
+
 
         while True:
 
             print(
-                f"  Mengambil data: start={start}"
+                f"  Mengambil data: "
+                f"start={start}"
             )
+
 
             params = {
                 "draw": 1,
@@ -287,6 +345,7 @@ class BKPMScraper:
                 "dataset_detail_parent_id":
                     parent_id,
             }
+
 
             for i in range(14):
 
@@ -314,22 +373,26 @@ class BKPMScraper:
                     f"columns[{i}][search][regex]"
                 ] = "false"
 
+
             try:
 
-                response = self.session.get(
-                    f"{BASE_URL}/data",
-                    params=params,
-                    timeout=60,
+                response = (
+                    self.session.get(
+                        f"{BASE_URL}/data",
+                        params=params,
+                        timeout=60,
+                    )
                 )
 
             except requests.exceptions.RequestException as e:
 
                 print(
                     "  ERROR:",
-                    e
+                    e,
                 )
 
                 return []
+
 
             if response.status_code != 200:
 
@@ -340,9 +403,12 @@ class BKPMScraper:
 
                 return []
 
+
             try:
 
-                result = response.json()
+                result = (
+                    response.json()
+                )
 
             except ValueError:
 
@@ -352,45 +418,63 @@ class BKPMScraper:
 
                 return []
 
+
             total = result.get(
                 "recordsTotal",
                 0,
             )
+
 
             rows = result.get(
                 "data",
                 [],
             )
 
+
             print(
                 f"  Server: {total} | "
-                f"Diterima batch: {len(rows)}"
+                f"Diterima batch: "
+                f"{len(rows)}"
             )
+
 
             if not rows:
                 break
 
-            all_rows.extend(rows)
+
+            all_rows.extend(
+                rows
+            )
+
 
             start += len(rows)
+
 
             if start >= total:
                 break
 
+
             time.sleep(1)
 
+
         print(
-            f"  TOTAL DATASET: {len(all_rows)}"
+            f"  TOTAL DATASET: "
+            f"{len(all_rows)}"
         )
+
 
         return all_rows
 
-    def save_raw_data(self, df, periode, index):
-        safe_periode = re.sub(
-            r"[^A-Za-z0-9]+",
-            "_",
-            periode,
-        ).strip("_")
+
+    def save_raw_data(
+        self,
+        df,
+        periode,
+        index,
+    ):
+
+        safe_periode = sanitize_filename(periode)
+
 
         filename = (
             f"bkpm_investasi_"
@@ -398,19 +482,19 @@ class BKPMScraper:
             f"{index}.parquet"
         )
 
-        # Convert dataframe -> parquet bytes
-        buffer = BytesIO()
 
-        df.to_parquet(
-            buffer,
-            index=False,
+        data = dataframe_to_bytes(
+            df,
+            format="parquet",
         )
 
-        data = buffer.getvalue()
 
-        object_name = f"bkpm/raw/{filename}"
+        object_name = (
+            f"bkpm/raw/{filename}"
+        )
 
-        write_file(
+
+        upload_bytes(
             self.minio_client,
             MINIO_BUCKET,
             data,
@@ -418,100 +502,113 @@ class BKPMScraper:
             "application/octet-stream",
         )
 
+
         print(
-            f"Raw data disimpan ke MinIO: {object_name}"
+            f"Raw data disimpan ke MinIO: "
+            f"{object_name}"
         )
 
-    def prepare_dataframe(self, df):
 
-        df = df.copy()
+    def prepare_dataframe(
+        self,
+        df,
+    ):
 
-        df.columns = (
-            df.columns
-            .str.replace(
-                "\ufeff",
-                "",
-                regex=False,
-            )
+        df = normalize_dataframe(
+            df,
+            numeric_columns=[
+                "investasi_rp_juta",
+                "investasi_us_ribu",
+                "tki",
+                "data_y",
+            ],
         )
 
-        numeric_columns = [
-            "investasi_rp_juta",
-            "investasi_us_ribu",
-            "tki",
-            "data_y",
-        ]
-
-        for column in numeric_columns:
-
-            if column in df.columns:
-
-                df[column] = pd.to_numeric(
-                    df[column],
-                    errors="coerce",
-                )
 
         if "data_y" in df.columns:
 
-            df["data_y"] = pd.to_numeric(
-                df["data_y"],
-                errors="coerce"
-            ).round(2)
+            df["data_y"] = (
+                df["data_y"]
+                .round(2)
+            )
+
 
         return df
+
 
     def load_existing_raw_data(self):
 
         raw_files = list(
-            self.RAW_DATA_DIR.glob("*.parquet")
+            self.RAW_DATA_DIR
+            .glob("*.parquet")
         )
 
+
         print(
-            f"Ditemukan {len(raw_files)} file raw."
+            f"Ditemukan "
+            f"{len(raw_files)} "
+            f"file raw."
         )
+
 
         if not raw_files:
 
             print(
-                "Tidak ada file raw di data/raw."
+                "Tidak ada file raw "
+                "di data/raw."
             )
 
             return pd.DataFrame()
 
+
         all_dataframes = []
+
 
         for filepath in raw_files:
 
             print(
                 "Membaca:",
-                filepath.name
+                filepath.name,
             )
 
-            df = pd.read_parquet(
+
+            df = read_parquet(
                 filepath
             )
+
 
             df = self.prepare_dataframe(
                 df
             )
 
+
             all_dataframes.append(
                 df
             )
 
-        full_df = pd.concat(
-            all_dataframes,
-            ignore_index=True
-        )
 
-        print("\nKOLOM FULL DF:")
-        print(full_df.columns.tolist())
+            full_df = concat_dataframes(
+                all_dataframes
+            )
+
 
         print(
-            f"\nTotal raw rows: {len(full_df):,}"
+            "\nKOLOM FULL DF:"
         )
 
+        print(
+            full_df.columns.tolist()
+        )
+
+
+        print(
+            f"\nTotal raw rows: "
+            f"{len(full_df):,}"
+        )
+
+
         return full_df
+
 
     def save_processed_data(
         self,
@@ -519,13 +616,59 @@ class BKPMScraper:
         tahun_awal,
         tahun_akhir,
     ):
-        pass    
+
+        filename = (
+            f"bkpm_investasi_processed_"
+            f"{tahun_awal}_"
+            f"{tahun_akhir}.parquet"
+        )
+
+
+        data = dataframe_to_bytes(
+            df,
+            format="parquet",
+        )
+
+
+        object_name = (
+            f"bkpm/processed/"
+            f"{filename}"
+        )
+
+
+        upload_bytes(
+            self.minio_client,
+            MINIO_BUCKET,
+            data,
+            object_name,
+            "application/octet-stream",
+        )
+
+
+        print(
+            f"\nProcessed data "
+            f"disimpan ke MinIO: "
+            f"{object_name}"
+        )
+
+        print(
+            f"Total processed rows: "
+            f"{len(df):,}"
+        )
+
 
 class BKPMETL:
 
     def __init__(self):
-        self.scraper = BKPMScraper()
-        self.minio_client = self.scraper.minio_client
+
+        self.scraper = (
+            BKPMScraper()
+        )
+
+        self.minio_client = (
+            self.scraper.minio_client
+        )
+
 
     def create_aggregation(
         self,
@@ -538,88 +681,92 @@ class BKPMETL:
 
         filtered_df = df.copy()
 
+
         if status_penanaman_modal:
+
             filtered_df = filtered_df[
-                filtered_df["status_penanaman_modal"]
+                filtered_df[
+                    "status_penanaman_modal"
+                ]
                 == status_penanaman_modal
             ]
 
+
         if nama_sektor:
+
             filtered_df = filtered_df[
-                filtered_df["sektor_bkpm"]
+                filtered_df[
+                    "sektor_bkpm"
+                ]
                 == nama_sektor
             ]
 
+
         if sektor_utama:
+
             filtered_df = filtered_df[
-                filtered_df["sektor_utama"]
+                filtered_df[
+                    "sektor_utama"
+                ]
                 == sektor_utama
             ]
 
+
         if filtered_df.empty:
-            print("Tidak ada data setelah filter.")
+
+            print(
+                "Tidak ada data "
+                "setelah filter."
+            )
+
             return pd.DataFrame()
 
+
         if group_by is None:
+
             group_by = [
                 "periode",
                 "provinsi",
             ]
 
-        result = (
-            filtered_df
-            .groupby(
-                group_by,
-                as_index=False,
-            )
-            .agg(
-                investasi_rp_juta=(
-                    "investasi_rp_juta",
+
+        # GENERIC AGGREGATION
+        # DITANGANI UTILS
+
+        result = aggregate_dataframe(
+            filtered_df,
+            group_by=group_by,
+            aggregations={
+                "investasi_rp_juta":
                     "sum",
-                ),
-                investasi_us_ribu=(
-                    "investasi_us_ribu",
+
+                "investasi_us_ribu":
                     "sum",
-                ),
-                tki=(
-                    "tki",
+
+                "tki":
                     "sum",
-                ),
-            )
+            },
         )
+
 
         return result
 
-    def check_duplicates(self, df):
-        key_columns = [
-            "negara",
-            "provinsi",
-            "kota",
-            "item",
-            "data_x",
-        ]
 
-        duplicates = df[
-            df.duplicated(
-                subset=key_columns,
-                keep=False
-            )
-        ].sort_values(key_columns)
+    def check_duplicates(
+        self,
+        df,
+    ):
 
-        if not duplicates.empty:
-            print("\nWARNING: Ditemukan duplicate data!")
-            print(f"Jumlah baris duplicate: {len(duplicates)}")
-
-            print(
-                duplicates[
-                    key_columns + ["data_y"]
-                ].to_string(index=False)
-            )
-
-        else:
-            print("\nTidak ada duplicate.")
-
-        return duplicates
+        return find_duplicates(
+            df,
+            subset=[
+                "negara",
+                "provinsi",
+                "kota",
+                "item",
+                "data_x",
+            ],
+        )
 
 
     def save_final_data(
@@ -632,35 +779,26 @@ class BKPMETL:
         jenis_data="investasi",
         sektor_utama=None,
     ):
+        filepath = FINAL_DATA_DIR / filename
 
-        FINAL_DATA_DIR.mkdir(
+        filepath.parent.mkdir(
             parents=True,
             exist_ok=True,
         )
 
-        filepath = FINAL_DATA_DIR / filename
-
-        # Simpan CSV ke lokal
-        df.to_csv(
-            filepath,
-            index=False,
-            encoding="utf-8-sig",
-        )
-
-        print(
-            "Final data disimpan:",
+        save_csv(
+            df,
             filepath,
         )
 
-        # Upload CSV ke MinIO
-        csv_bytes = df.to_csv(
-            index=False,
-            encoding="utf-8-sig",
-        ).encode("utf-8-sig")
+        csv_bytes = dataframe_to_bytes(
+            df,
+            format="csv",
+        )
 
         object_name = f"bkpm/final/{filename}"
 
-        write_file(
+        upload_bytes(
             self.minio_client,
             MINIO_BUCKET,
             csv_bytes,
@@ -687,36 +825,54 @@ class BKPMETL:
             )
         )
 
-    def periode_to_date(self, periode):
-        """
-        Mengubah periode triwulan menjadi tanggal akhir triwulan.
 
-        2010 - Triwulan 1 -> 31-03-2010
-        2010 - Triwulan 2 -> 30-06-2010
-        2010 - Triwulan 3 -> 30-09-2010
-        2010 - Triwulan 4 -> 31-12-2010
-        """
+    def periode_to_date(
+        self,
+        periode,
+    ):
 
         if pd.isna(periode):
             return pd.NA
 
-        periode = str(periode).strip()
+
+        periode = str(
+            periode
+        ).strip()
+
 
         tahun = periode[:4]
 
+
         if "Triwulan 1" in periode:
-            return f"31-03-{tahun}"
+
+            return (
+                f"31-03-{tahun}"
+            )
+
 
         elif "Triwulan 2" in periode:
-            return f"30-06-{tahun}"
+
+            return (
+                f"30-06-{tahun}"
+            )
+
 
         elif "Triwulan 3" in periode:
-            return f"30-09-{tahun}"
+
+            return (
+                f"30-09-{tahun}"
+            )
+
 
         elif "Triwulan 4" in periode:
-            return f"31-12-{tahun}"
+
+            return (
+                f"31-12-{tahun}"
+            )
+
 
         return pd.NA
+
 
     def generate_nama_data(
         self,
@@ -728,15 +884,22 @@ class BKPMETL:
     ):
 
         if jenis_data == "tenaga_kerja":
+
             return (
-                f"Jumlah Penyerapan Tenaga Kerja "
+                f"Jumlah Penyerapan "
+                f"Tenaga Kerja "
                 f"{status_penanaman_modal} "
                 f"Sektor {nama} "
                 f"Menurut {lokasi} "
                 f"(Triwulan)"
             )
 
-        if level == "total" or nama is None:
+
+        if (
+            level == "total"
+            or nama is None
+        ):
+
             return (
                 f"Realisasi Investasi "
                 f"{status_penanaman_modal} "
@@ -745,14 +908,6 @@ class BKPMETL:
                 f"(Triwulan)"
             )
 
-        if level == "sektor_utama":
-            return (
-                f"Realisasi Investasi "
-                f"{status_penanaman_modal} "
-                f"Sektor {nama} "
-                f"Menurut {lokasi} "
-                f"(Triwulan)"
-            )
 
         return (
             f"Realisasi Investasi "
@@ -762,54 +917,97 @@ class BKPMETL:
             f"(Triwulan)"
         )
 
-    def add_nama_data(self, nama_data):
-        nama_data_file = PROJECT_ROOT / "nama_data.csv"
+
+    def add_nama_data(
+        self,
+        nama_data,
+    ):
+
+        nama_data_file = (
+            PROJECT_ROOT
+            / "nama_data.csv"
+        )
+
 
         if nama_data_file.exists():
-            df_nama = pd.read_csv(nama_data_file)
-        else:
-            df_nama = pd.DataFrame(columns=["nama_data"])
 
-        if nama_data in df_nama["nama_data"].astype(str).values:
-            print(f"Nama data sudah ada: {nama_data}")
+            df_nama = pd.read_csv(
+                nama_data_file
+            )
+
+        else:
+
+            df_nama = pd.DataFrame(
+                columns=["nama_data"]
+            )
+
+
+        if (
+            nama_data
+            in df_nama[
+                "nama_data"
+            ].astype(str).values
+        ):
+
+            print(
+                f"Nama data sudah ada: "
+                f"{nama_data}"
+            )
+
             return
 
+
         new_row = pd.DataFrame({
-            "nama_data": [nama_data],
+
+            "nama_data":
+                [nama_data],
+
         })
 
+
         df_nama = pd.concat(
-            [df_nama, new_row],
+            [
+                df_nama,
+                new_row,
+            ],
             ignore_index=True,
         )
 
-        df_nama.to_csv(
+
+        save_csv(
+            df_nama,
             nama_data_file,
-            index=False,
-            encoding="utf-8-sig",
         )
 
-        print(f"Nama data ditambahkan: {nama_data}")
+
+        print(
+            f"Nama data ditambahkan: "
+            f"{nama_data}"
+        )
+
 
     def load_mapping_sektor(self):
 
         mapping_file = (
-            PROJECT_ROOT / "Mapping Sektor.xlsx"
+            PROJECT_ROOT
+            / "Mapping Sektor.xlsx"
         )
+
 
         mapping_df = pd.read_excel(
             mapping_file
         )
 
-        mapping_df = mapping_df[
-            ["sektor_bkpm"]
-        ].dropna()
 
         mapping_df = (
-            mapping_df
+            mapping_df[
+                ["sektor_bkpm"]
+            ]
+            .dropna()
             .drop_duplicates()
             .reset_index(drop=True)
         )
+
 
         return mapping_df
 
@@ -949,9 +1147,8 @@ def main(tahun_awal=2010, tahun_akhir=2026):
 
             return
 
-        full_df = pd.concat(
-            all_dataframes,
-            ignore_index=True
+        full_df = concat_dataframes(
+            all_dataframes
         )
 
         print(
@@ -1027,9 +1224,11 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 continue
 
             if status == "PMA":
-                satuan = "US$ ribu"
+                satuan = "US$"
                 data_y = (
-                    hasil["investasi_us_ribu"].round(2)
+                    hasil["investasi_us_ribu"]
+                    .mul(1000)
+                    .round(2)
                 )
             else:
                 satuan = "Rp juta"
@@ -1047,7 +1246,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     "satuan": satuan,
                     "data_x": (
                         hasil["periode"]
-                        .apply(etl.periode_to_date)
+                        .apply(format_quarter_end)
                     ),
                     "data_y": data_y,
                     "sumber": "BKPM",
@@ -1065,7 +1264,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     "satuan": satuan,
                     "data_x": (
                         hasil["periode"]
-                        .apply(etl.periode_to_date)
+                        .apply(format_quarter_end)
                     ),
                     "data_y": data_y,
                     "sumber": "BKPM",
@@ -1083,7 +1282,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     "satuan": satuan,
                     "data_x": (
                         hasil["periode"]
-                        .apply(etl.periode_to_date)
+                        .apply(format_quarter_end)
                     ),
                     "data_y": data_y,
                     "sumber": "BKPM",
@@ -1097,12 +1296,9 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 )
                 continue
 
-            final_df = (
-                final_df[
-                    final_df["data_y"].notna()
-                    & (final_df["data_y"] != 0)
-                ]
-                .copy()
+            final_df = filter_nonzero(
+                final_df,
+                "data_y",
             )
 
             if final_df.empty:
@@ -1187,11 +1383,11 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     continue
 
                 if status == "PMA":
-
-                    satuan = "US$ ribu"
-
+                    satuan = "US$"
                     data_y = (
-                        hasil["investasi_us_ribu"].round(2)
+                        hasil["investasi_us_ribu"]
+                        .mul(1000)
+                        .round(2)
                     )
 
                 else:
@@ -1212,7 +1408,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         "satuan": satuan,
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
                         "data_y": data_y,
                         "sumber": "BKPM",
@@ -1231,7 +1427,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         "satuan": satuan,
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
                         "data_y": data_y,
                         "sumber": "BKPM",
@@ -1250,7 +1446,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         "satuan": satuan,
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
                         "data_y": data_y,
                         "sumber": "BKPM",
@@ -1266,14 +1462,9 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     )
                     continue
 
-                final_df = (
-                    final_df[
-                        final_df["data_y"].notna()
-                        & (
-                            final_df["data_y"] != 0
-                        )
-                    ]
-                    .copy()
+                final_df = filter_not_null(
+                    final_df,
+                    "data_y",
                 )
 
                 if final_df.empty:
@@ -1292,14 +1483,8 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     level="sektor_utama",
                 )
 
-                nama_file_sektor_utama = (
-                    re.sub(
-                        r"[^A-Za-z0-9]+",
-                        "_",
-                        sektor_utama,
-                    )
-                    .strip("_")
-                    .lower()
+                nama_file_sektor_utama = sanitize_filename(
+                    sektor_utama
                 )
 
                 nama_file_status = (
@@ -1314,7 +1499,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 filename = (
                     f"bkpm_realisasi_"
                     f"{nama_file_status}_"
-                    f"sektor_utama_"
                     f"{nama_file_sektor_utama}_"
                     f"{nama_file_lokasi}.csv"
                 )
@@ -1355,7 +1539,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
 
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
 
                         "data_y": hasil["tki"].round(2),
@@ -1382,7 +1566,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
 
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
 
                         "data_y": hasil["tki"].round(2),
@@ -1409,7 +1593,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
 
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
 
                         "data_y": hasil["tki"].round(2),
@@ -1444,21 +1628,14 @@ def main(tahun_awal=2010, tahun_akhir=2026):
 
                 if not tenaga_kerja_df.empty:
 
-                    nama_file_tki_sektor_utama = (
-                        re.sub(
-                            r"[^A-Za-z0-9]+",
-                            "_",
-                            sektor_utama,
-                        )
-                        .strip("_")
-                        .lower()
+                    nama_file_tki_sektor_utama = sanitize_filename(
+                        sektor_utama
                     )
 
                     filename_tki = (
                         f"bkpm_jumlah_penyerapan_"
                         f"tenaga_kerja_"
                         f"{status.lower()}_"
-                        f"sektor_utama_"
                         f"{nama_file_tki_sektor_utama}_"
                         f"{lokasi.lower().replace(' ', '_')}.csv"
                     )
@@ -1519,9 +1696,11 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     continue
 
                 if status == "PMA":
-                    satuan = "US$ ribu"
+                    satuan = "US$"
                     data_y = (
-                        hasil["investasi_us_ribu"].round(2)
+                        hasil["investasi_us_ribu"]
+                        .mul(1000)
+                        .round(2)
                     )
                 else:
                     satuan = "Rp juta"
@@ -1539,7 +1718,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         "satuan": satuan,
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
                         "data_y": data_y,
                         "sumber": "BKPM",
@@ -1557,7 +1736,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         "satuan": satuan,
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
                         "data_y": data_y,
                         "sumber": "BKPM",
@@ -1575,7 +1754,7 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         "satuan": satuan,
                         "data_x": (
                             hasil["periode"]
-                            .apply(etl.periode_to_date)
+                            .apply(format_quarter_end)
                         ),
                         "data_y": data_y,
                         "sumber": "BKPM",
@@ -1589,15 +1768,13 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     )
                     continue
 
-                final_df = (
-                    final_df[
-                        final_df["data_y"].notna()
-                        & (final_df["data_y"] != 0)
-                    ]
-                    .copy()
+                final_df = filter_not_null(
+                    final_df,
+                    "data_y",
                 )
 
                 if final_df.empty:
+
                     print(
                         "Tidak ada data setelah cleaning, "
                         "dilewati."
@@ -1611,14 +1788,8 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                     level="sektor_bkpm",
                 )
 
-                nama_file_sektor = (
-                    re.sub(
-                        r"[^A-Za-z0-9]+",
-                        "_",
-                        sektor,
-                    )
-                    .strip("_")
-                    .lower()
+                nama_file_sektor = sanitize_filename(
+                    sektor
                 )
 
                 nama_file_status = status.lower()
@@ -1631,7 +1802,6 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                 filename = (
                     f"bkpm_realisasi_"
                     f"{nama_file_status}_"
-                    f"sektor_"
                     f"{nama_file_sektor}_"
                     f"{nama_file_lokasi}.csv"
                 )

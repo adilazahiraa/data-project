@@ -1,32 +1,64 @@
 import os
+import argparse
 from pathlib import Path
 
 import pandas as pd
-import requests
 from dotenv import load_dotenv
+
+
+from utils.api import (
+    create_session,
+)
+
+from utils.file import (
+    read_parquet,
+    save_parquet,
+    save_csv,
+)
+
+from utils.data import (
+    normalize_dataframe,
+)
+
+from utils.storage import (
+    get_minio_client,
+    upload_bytes,
+)
+
 
 load_dotenv()
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+
+PROJECT_ROOT = (
+    Path(__file__).resolve().parents[1]
+)
+
 
 MINIO_BUCKET = "maganghub"
 
-BPS_API_KEY = os.getenv("BPS_API_KEY")
-KATADATA_API_KEY = os.getenv("KATADATA_API_KEY")
 
-BPS_BASE_URL = "https://webapi.bps.go.id/v1/api"
-DATABASE_BASE_URL = "https://xflask.databoks.id/database"
-
-DOMAIN = 1173
-VARIABLE = 115
-
-INDIKATOR = "Gini Ratio Menurut Kabupaten Kota"
-
-SOURCE_URL = (
-    "https://langsakota.bps.go.id/id/"
-    "statistics-table/2/MTE1IzI=/"
-    "rasio-gini-provinsi-aceh-menurut-kabupaten-kota.html"
+BPS_API_KEY = os.getenv(
+    "BPS_API_KEY"
 )
+
+KATADATA_API_KEY = os.getenv(
+    "KATADATA_API_KEY"
+)
+
+
+BPS_BASE_URL = (
+    "https://webapi.bps.go.id/v1/api"
+)
+
+DATABASE_BASE_URL = (
+    "https://xflask.databoks.id/database"
+)
+
+
+INDIKATOR = (
+    "Gini Ratio Menurut Kabupaten Kota"
+)
+
 
 RAW_DIR = (
     PROJECT_ROOT
@@ -36,816 +68,1240 @@ RAW_DIR = (
     / "gini_kabupaten_kota"
 )
 
+
 RAW_FILE = (
     RAW_DIR
     / "bps_gini_kabupaten_kota_raw.parquet"
 )
 
+
+FINAL_DIR = (
+    PROJECT_ROOT
+    / "data"
+    / "final"
+    / "bps"
+    / "gini_kabupaten_kota"
+)
+
+
+FINAL_FILE = (
+    FINAL_DIR
+    / "bps_gini_kabupaten_kota.csv"
+)
+
+
+GINI_CONFIG = [
+    {
+        "domain_id": "1200",
+        "provinsi": "Sumatera Utara",
+        "var_id": 467,
+    },
+    {
+        "domain_id": "1300",
+        "provinsi": "Sumatera Barat",
+        "var_id": 83,
+    },
+    {
+        "domain_id": "1700",
+        "provinsi": "Bengkulu",
+        "var_id": 268,
+    },
+    {
+        "domain_id": "1800",
+        "provinsi": "Lampung",
+        "var_id": 632,
+    },
+    {
+        "domain_id": "3400",
+        "provinsi": "D.I. Yogyakarta",
+        "var_id": 333,
+    },
+    {
+        "domain_id": "3600",
+        "provinsi": "Banten",
+        "var_id": 425,
+    },
+    {
+        "domain_id": "6200",
+        "provinsi": "Kalimantan Tengah",
+        "var_id": 371,
+    },
+    {
+        "domain_id": "6400",
+        "provinsi": "Kalimantan Timur",
+        "var_id": 549,
+    },
+    {
+        "domain_id": "7100",
+        "provinsi": "Sulawesi Utara",
+        "var_id": 280,
+    },
+    {
+        "domain_id": "7300",
+        "provinsi": "Sulawesi Selatan",
+        "var_id": 1743,
+    },
+    {
+        "domain_id": "1400",
+        "provinsi": "Riau",
+        "var_id": 387,
+    },
+    {
+        "domain_id": "1500",
+        "provinsi": "Jambi",
+        "var_id": 51,
+    },
+    {
+        "domain_id": "1600",
+        "provinsi": "Sumatera Selatan",
+        "var_id": 623,
+    },
+    {
+        "domain_id": "1900",
+        "provinsi": "Kepulauan Bangka Belitung",
+        "var_id": 1174,
+    },
+    {
+        "domain_id": "3100",
+        "provinsi": "DKI Jakarta",
+        "var_id": 884,
+    },
+    {
+        "domain_id": "3500",
+        "provinsi": "Jawa Timur",
+        "var_id": 488,
+    },
+    {
+        "domain_id": "5100",
+        "provinsi": "Bali",
+        "var_id": 41,
+    },
+    {
+        "domain_id": "5200",
+        "provinsi": "Nusa Tenggara Barat",
+        "var_id": 426,
+    },
+    {
+        "domain_id": "6100",
+        "provinsi": "Kalimantan Barat",
+        "var_id": 41,
+    },
+    {
+        "domain_id": "6500",
+        "provinsi": "Kalimantan Utara",
+        "var_id": 495,
+    },
+    {
+        "domain_id": "7200",
+        "provinsi": "Sulawesi Tengah",
+        "var_id": 52,
+    },
+    {
+        "domain_id": "7400",
+        "provinsi": "Sulawesi Tenggara",
+        "var_id": 467,
+    },
+    {
+        "domain_id": "8200",
+        "provinsi": "Maluku Utara",
+        "var_id": 142,
+    },
+    {
+        "domain_id": "9100",
+        "provinsi": "Papua Barat",
+        "var_id": 171,
+    },
+    {
+        "domain_id": "9400",
+        "provinsi": "Papua",
+        "var_id": 50,
+    },
+    {
+        "domain_id": "7600",
+        "provinsi": "Sulawesi Barat",
+        "var_id": 166,
+    },
+]
+
+
 class BPSScraper:
 
-    def __init__(self):
+    def __init__(
+        self,
+        domain_id,
+        var_id,
+        provinsi,
+    ):
 
-        if not BPS_API_KEY:
+        self.domain_id = str(
+            domain_id
+        )
+
+        self.var_id = int(
+            var_id
+        )
+
+        self.provinsi = provinsi
+
+        self.session = (
+            create_session()
+        )
+
+
+    def get_available_years(self):
+
+        url = (
+            f"{BPS_BASE_URL}/list/model/th/"
+            f"domain/{self.domain_id}/"
+            f"var/{self.var_id}/"
+            f"key/{BPS_API_KEY}"
+        )
+
+
+        response = self.session.get(
+            url,
+            timeout=60,
+        )
+
+        response.raise_for_status()
+
+
+        metadata = response.json()
+
+
+        if metadata.get("status") != "OK":
+
             raise RuntimeError(
-                "BPS_API_KEY tidak ditemukan di .env"
+                metadata.get(
+                    "message",
+                    metadata,
+                )
             )
 
-        self.session = requests.Session()
 
-    def scrape(self):
+        return metadata["data"][1]
 
-        print("\n==============================")
-        print("SCRAPING BPS WEB API")
-        print("==============================")
+
+    def get_data(self, th_id):
 
         url = (
             f"{BPS_BASE_URL}/list/model/data/"
             f"lang/ind/"
-            f"domain/{DOMAIN}/"
-            f"var/{VARIABLE}/"
-            f"th/122/"
+            f"domain/{self.domain_id}/"
+            f"var/{self.var_id}/"
+            f"th/{th_id}/"
             f"key/{BPS_API_KEY}"
         )
 
-        print("URL:", url.replace(
-            BPS_API_KEY,
-            "***"
-        ))
 
         response = self.session.get(
             url,
-            timeout=60
+            timeout=60,
         )
-
-        print("STATUS:", response.status_code)
 
         response.raise_for_status()
+
+
         result = response.json()
 
-        print("\n==============================")
-        print("RAW BPS DATA")
-        print("==============================")
-        print(result)
-
-        print("\nSTATUS API:", result.get("status"))
-        print(
-            "DATA AVAILABILITY:",
-            result.get("data-availability")
-        )
 
         if result.get("status") != "OK":
-            raise RuntimeError(
-                result.get("message", result)
+
+            print(
+                "⚠️ API tidak OK:",
+                result.get("message"),
             )
+
+            return None
+
 
         return result
 
-    def prepare_dataframe(self, result):
 
-        print("\n==============================")
-        print("PREPARE DATA BPS")
-        print("==============================")
+    def parse_data(
+        self,
+        result,
+        tahun,
+    ):
 
-        vervar = result.get("vervar", [])
-        tahun = result.get("tahun", [])
-        turvar = result.get("turvar", [])
-        turtahun = result.get("turtahun", [])
-        datacontent = result.get("datacontent", {})
+        vervar = result.get(
+            "vervar",
+            [],
+        )
+
+        var = result.get(
+            "var",
+            [],
+        )
+
+        datacontent = result.get(
+            "datacontent",
+            {},
+        )
+
 
         if not datacontent:
-            raise RuntimeError(
-                "Response BPS tidak memiliki datacontent"
+            return pd.DataFrame()
+
+
+        if not isinstance(
+            datacontent,
+            dict,
+        ):
+
+            print(
+                "⚠️ Format datacontent:",
+                type(datacontent),
             )
 
-        var_info = result.get("var", [])
+            return pd.DataFrame()
 
-        if not var_info:
-            raise RuntimeError(
-                "Metadata indikator BPS tidak ditemukan"
+
+        nama_indikator = (
+            var[0].get(
+                "label",
+                INDIKATOR,
             )
+            if var
+            else INDIKATOR
+        )
 
-        indikator = var_info[0].get("label", "")
-        id_var = var_info[0].get("val")
 
-        id_turvar = str(turvar[0]["val"]) if turvar else "0"
-        id_turtahun = str(turtahun[0]["val"]) if turtahun else "0"
+        satuan = (
+            var[0].get(
+                "unit",
+                pd.NA,
+            )
+            if var
+            else pd.NA
+        )
+
+
+        wilayah_map = {
+            str(item["val"]): item["label"]
+            for item in vervar
+        }
+
 
         rows = []
 
-        for wilayah in vervar:
 
-            id_wilayah = str(wilayah["val"])
-            nama_wilayah = wilayah["label"].strip()
+        for key, value in (
+            datacontent.items()
+        ):
 
-            for periode in tahun:
+            key = str(key)
 
-                id_tahun = str(periode["val"])
-                tahun_label = periode["label"]
 
-                # Key datacontent BPS:
-                # vervar + var + tahun + turvar
-                key = (
-                    f"{id_wilayah}"
-                    f"{id_var}"
-                    f"{id_turvar}"
-                    f"{id_tahun}"
-                    f"{id_turtahun}"
+            if len(key) < 13:
+                continue
+
+
+            wilayah_id = key[:4]
+            var_id = key[4:7]
+
+
+            if var_id != str(
+                self.var_id
+            ):
+                continue
+
+
+            wilayah = (
+                wilayah_map.get(
+                    wilayah_id,
+                    wilayah_id,
                 )
+            )
 
-                if key not in datacontent:
-                    print(
-                        f"KEY TIDAK DITEMUKAN: {key}"
-                    )
 
-                if id_wilayah == "1100":
-                    print("DEBUG KEY:", key)
-                    print("DEBUG VALUE:", datacontent.get(key))
-                    print("DEBUG KEYS:", list(datacontent.keys())[:5])
+            rows.append({
 
-                value = datacontent.get(key)
+                "kode_wilayah":
+                    wilayah_id,
 
-                rows.append({
-                    "id_bps": wilayah["val"],
-                    "wilayah": nama_wilayah,
-                    "indikator": indikator,
-                    "id_var_bps": id_var,
-                    "tahun": tahun_label,
-                    "data_x": f"31-12-{tahun_label}",
-                    "data_y": value,
-                    "satuan": "Poin Indeks",
-                })
+                "wilayah":
+                    wilayah,
 
-        df = pd.DataFrame(rows)
+                "provinsi":
+                    self.provinsi,
 
-        print("KOLOM BPS:")
-        print(df.columns.tolist())
+                "indikator":
+                    nama_indikator,
 
-        print("\nJUMLAH ROW:", len(df))
+                "data_x":
+                    tahun,
 
-        print("\nDATA:")
-        print(df.to_string(index=False))
+                "data_y":
+                    pd.to_numeric(
+                        value,
+                        errors="coerce",
+                    ),
 
-        return df
+                "satuan":
+                    satuan,
+            })
 
-    def normalize(self, df):
 
-        print("\n==============================")
-        print("NORMALIZE RAW DATA")
-        print("==============================")
+        return pd.DataFrame(rows)
 
-        df = df.copy()
-
-        df["data_x"] = pd.to_datetime(
-            df["data_x"],
-            errors="coerce"
-        )
-
-        df["data_y"] = pd.to_numeric(
-            df["data_y"],
-            errors="coerce"
-        )
-
-        df["sumber"] = "BPS"
-
-        df["nama_data_import"] = SOURCE_URL
-
-        df["id_nama_data"] = pd.NA
-
-        df = df[
-            [
-                "id_bps",
-                "indikator",
-                "wilayah",
-                "data_x",
-                "data_y",
-                "satuan",
-                "sumber",
-                "nama_data_import",
-                "id_nama_data"
-            ]
-        ]
-
-        print("\nDATA RAW SIAP:")
-
-        print(
-            df.to_string(index=False)
-        )
-
-        print(
-            "\nJUMLAH DATA:",
-            len(df)
-        )
-
-        print(
-            "DATA NILAI TERISI:",
-            df["data_y"].notna().sum()
-        )
-
-        return df
-
-    def save_parquet(self, df):
-
-        RAW_DIR.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        df.to_parquet(
-            RAW_FILE,
-            index=False
-        )
-
-        print("\n==============================")
-        print("SAVE RAW PARQUET")
-        print("==============================")
-
-        print("FILE:", RAW_FILE)
-
-    def upload_minio(self):
-
-        from utils.minio import (
-            create_client,
-            write_file
-        )
-
-        client = create_client()
-
-        with open(
-            RAW_FILE,
-            "rb"
-        ) as file:
-
-            parquet_bytes = file.read()
-
-        object_name = (
-            "bps/raw/"
-            "bps_gini_kabupaten_kota_raw.parquet"
-        )
-
-        write_file(
-            client,
-            MINIO_BUCKET,
-            parquet_bytes,
-            object_name,
-            "application/octet-stream"
-        )
-
-        print("\n==============================")
-        print("UPLOAD MINIO")
-        print("==============================")
-
-        print(
-            f"{MINIO_BUCKET}/{object_name}"
-        )
 
     def run(self):
 
-        result = self.scrape()
-
-        df = self.prepare_dataframe(
-            result
+        print(
+            "\n================================"
         )
 
-        df = self.normalize(
-            df
+        print(
+            "BPS GINI RATIO SCRAPER"
         )
 
-        self.save_parquet(
-            df
+        print(
+            "================================"
         )
 
-        return df
+
+        print(
+            "DOMAIN:",
+            self.domain_id,
+        )
+
+        print(
+            "PROVINSI:",
+            self.provinsi,
+        )
+
+        print(
+            "VAR ID:",
+            self.var_id,
+        )
+
+
+        years = (
+            self.get_available_years()
+        )
+
+
+        print(
+            "\nTAHUN TERSEDIA:"
+        )
+
+        print(years)
+
+
+        all_data = []
+
+
+        for year in years:
+
+            th_id = year["th_id"]
+            tahun = year["th"]
+
+
+            print(
+                f"\nSCRAPE "
+                f"{self.provinsi} - {tahun}"
+            )
+
+
+            print(
+                "TH ID:",
+                th_id,
+            )
+
+
+            result = self.get_data(
+                th_id
+            )
+
+
+            if result is None:
+                continue
+
+
+            df = self.parse_data(
+                result,
+                tahun,
+            )
+
+
+            print(
+                "JUMLAH DATA:",
+                len(df),
+            )
+
+
+            if not df.empty:
+                all_data.append(df)
+
+
+        if not all_data:
+            return pd.DataFrame()
+
+
+        return pd.concat(
+            all_data,
+            ignore_index=True,
+        )
+
+
+def scrape_all(save_raw=True):
+
+    print(
+        "\n========================================"
+    )
+
+    print(
+        "SCRAPE GINI RATIO KABUPATEN/KOTA"
+    )
+
+    print(
+        "========================================"
+    )
+
+
+    all_data = []
+
+
+    for config in GINI_CONFIG:
+
+        print(
+            "\n--------------------------------"
+        )
+
+        print(
+            config["provinsi"]
+        )
+
+        print(
+            "--------------------------------"
+        )
+
+
+        scraper = BPSScraper(
+            domain_id=config["domain_id"],
+            var_id=config["var_id"],
+            provinsi=config["provinsi"],
+        )
+
+
+        try:
+
+            df = scraper.run()
+
+
+            if df.empty:
+
+                print(
+                    "⚠️ Data kosong:",
+                    config["provinsi"],
+                )
+
+                continue
+
+
+            all_data.append(df)
+
+
+            print(
+                "✅ Berhasil:",
+                len(df),
+                "row",
+            )
+
+
+        except Exception as e:
+
+            print(
+                "❌ Gagal:",
+                config["provinsi"],
+            )
+
+            print(
+                "   ",
+                str(e),
+            )
+
+            continue
+
+
+    if not all_data:
+
+        raise RuntimeError(
+            "Tidak ada data yang berhasil "
+            "di-scrape."
+        )
+
+
+    df_raw = pd.concat(
+        all_data,
+        ignore_index=True,
+    )
+
+
+    if save_raw:
+
+        save_parquet(
+            df_raw,
+            RAW_FILE,
+        )
+
+        print(
+            "\n================================"
+        )
+
+        print(
+            "RAW PARQUET SELESAI"
+        )
+
+        print(
+            "================================"
+        )
+
+        print(
+            "FILE:",
+            RAW_FILE,
+        )
+
+
+    else:
+
+        print(
+            "\n================================"
+        )
+
+        print(
+            "DRY RUN - RAW TIDAK DISIMPAN"
+        )
+
+        print(
+            "================================"
+        )
+
+
+    print(
+        "JUMLAH ROW:",
+        len(df_raw),
+    )
+
+
+    print(
+        "\nJUMLAH ROW PER PROVINSI:"
+    )
+
+
+    print(
+        df_raw
+        .groupby("provinsi")
+        .size()
+        .sort_values(
+            ascending=False
+        )
+    )
+
+
+    return df_raw
 
 
 class BPSETL:
 
     def __init__(self):
 
+        self.minio_client = (
+            get_minio_client()
+        )
+
+
         if not KATADATA_API_KEY:
+
             raise RuntimeError(
-                "KATADATA_API_KEY tidak ditemukan "
-                "di .env"
+                "KATADATA_API_KEY "
+                "tidak ditemukan di .env"
             )
 
-        self.session = requests.Session()
+
+        self.session = (
+            create_session()
+        )
+
 
         self.session.headers.update({
-            "X-API-Key": KATADATA_API_KEY
+            "X-API-Key":
+                KATADATA_API_KEY
         })
+
 
     def load_raw(self):
 
-        print("\n==============================")
-        print("LOAD RAW PARQUET")
-        print("==============================")
+        print(
+            "\n=============================="
+        )
 
-        df = pd.read_parquet(
+        print(
+            "LOAD RAW PARQUET"
+        )
+
+        print(
+            "=============================="
+        )
+
+
+        df = read_parquet(
             RAW_FILE
         )
 
+
         print(
             "JUMLAH RAW DATA:",
-            len(df)
+            len(df),
         )
 
+        print(
+            "KOLOM RAW:",
+            df.columns.tolist(),
+        )
+
+
         return df
+
 
     def get_nama_data(self):
 
-        print("\n==============================")
-        print("GET NAMA DATA")
-        print("==============================")
+        print(
+            "\n=============================="
+        )
+
+        print(
+            "GET NAMA DATA"
+        )
+
+        print(
+            "=============================="
+        )
+
 
         response = self.session.get(
             f"{DATABASE_BASE_URL}/nama_data",
-            timeout=30
+            timeout=30,
         )
+
 
         print(
             "STATUS:",
-            response.status_code
+            response.status_code,
         )
+
 
         response.raise_for_status()
 
-        df = pd.DataFrame(
+
+        df_nama = pd.DataFrame(
             response.json()
         )
 
+
         print(
             "JUMLAH DATASET:",
-            len(df)
+            len(df_nama),
         )
 
-        return df
 
-    def match_indikator(self, df_nama, indikator):
+        return df_nama
 
-        print("\n==============================")
-        print("MATCH INDIKATOR")
-        print("==============================")
 
-        print("INDIKATOR BPS:", indikator)
+    def match_nama_data(
+        self,
+        df_nama,
+    ):
 
-        indicator_mapping = {
-            "Rasio Gini Menurut Kabupaten/Kota di Provinsi Aceh":
-                "Gini Ratio Menurut Kabupaten Kota"
-        }
+        print(
+            "\n=============================="
+        )
 
-        target_nama = indicator_mapping.get(indikator)
+        print(
+            "MATCH NAMA DATA"
+        )
 
-        if not target_nama:
-            print("❌ MAPPING INDIKATOR TIDAK DITEMUKAN")
-            return None
+        print(
+            "=============================="
+        )
+
+
+        print(
+            "TARGET:",
+            INDIKATOR,
+        )
+
 
         df_nama = df_nama.copy()
+
+
+        df_nama = normalize_dataframe(
+            df_nama,
+            text_columns=[
+                "nama",
+            ],
+        )
+
 
         df_nama["nama_clean"] = (
             df_nama["nama"]
             .astype(str)
-            .str.strip()
             .str.lower()
         )
 
-        target_clean = (
-            target_nama
+
+        target = (
+            INDIKATOR
             .strip()
             .lower()
         )
 
+
         matched = df_nama[
-            df_nama["nama_clean"] == target_clean
+            df_nama["nama_clean"]
+            == target
         ]
+
 
         if matched.empty:
 
-            print("❌ NAMA DATA DATABASE TIDAK DITEMUKAN")
-            print("TARGET:", target_nama)
+            print(
+                "❌ NAMA DATA "
+                "TIDAK DITEMUKAN"
+            )
+
+            print(
+                "TARGET:",
+                INDIKATOR,
+            )
 
             return None
 
+
         row = matched.iloc[0]
 
-        id_nama_data = int(row["id"])
 
-        print("✅ MATCH")
-        print("NAMA DATA:", row["nama"])
-        print("ID NAMA DATA:", id_nama_data)
+        id_nama_data = int(
+            row["id"]
+        )
+
+
+        print(
+            "✅ MATCH"
+        )
+
+        print(
+            "NAMA:",
+            row["nama"]
+        )
+
+        print(
+            "ID:",
+            id_nama_data
+        )
+
 
         return id_nama_data
 
-    def get_existing_data(
+
+    def transform(
         self,
-        id_nama_data
+        df_raw,
+        id_nama_data,
     ):
 
-        print("\n==============================")
-        print("GET DATA EXISTING")
-        print("==============================")
-
-        response = self.session.get(
-            f"{DATABASE_BASE_URL}/data",
-            params={
-                "id_nama_data": id_nama_data
-            },
-            timeout=60
+        print(
+            "\nWILAYAH RAW:"
         )
 
         print(
-            "STATUS:",
-            response.status_code
-        )
-
-        response.raise_for_status()
-
-        rows = response.json()
-
-        records = []
-
-        for row in rows:
-
-            xs = (
-                row.get("data_x")
-                or ""
-            ).split(",")
-
-            ys = (
-                row.get("data_y")
-                or ""
-            ).split(",")
-
-            for x, y in zip(
-                xs,
-                ys
-            ):
-
-                records.append({
-
-                    "id": row["id"],
-
-                    "id_kota": row.get(
-                        "id_kota"
-                    ),
-
-                    "id_provinsi": row.get(
-                        "id_provinsi"
-                    ),
-
-                    "kota": row.get(
-                        "kota"
-                    ),
-
-                    "provinsi": row.get(
-                        "provinsi"
-                    ),
-
-                    "item": row.get(
-                        "item"
-                    ),
-
-                    "satuan": row.get(
-                        "satuan"
-                    ),
-
-                    "data_x": x.strip(),
-
-                    "data_y": (
-                        float(y)
-                        if y.strip()
-                        else None
-                    ),
-
-                    "sumber": row.get(
-                        "sumber"
-                    )
-                })
-
-        df = pd.DataFrame(
-            records
-        )
-
-        print(
-            "JUMLAH DATA EXISTING:",
-            len(df)
-        )
-
-        return df
-
-    @staticmethod
-    def normalize_location(value):
-
-        value = (
-            str(value)
-            .strip()
-            .lower()
-        )
-
-        prefixes = [
-            "kabupaten ",
-            "kab. ",
-            "kota "
-        ]
-
-        for prefix in prefixes:
-
-            if value.startswith(prefix):
-
-                value = value[
-                    len(prefix):
-                ]
-
-                break
-
-        return value.strip()
-
-
-    def match_data(
-        self,
-        df_scraping,
-        df_db
-    ):
-
-        print("\n==============================")
-        print("MATCH SCRAPING VS DATABASE")
-        print("==============================")
-
-        scraping = df_scraping.copy()
-
-        database = df_db.copy()
-
-        print("\n==============================")
-        print("CEK ROW ACEH DI DATABASE")
-        print("==============================")
-
-        aceh = database[
-            database["provinsi"]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            == "aceh"
-        ]
-
-        print("JUMLAH ROW ACEH:", len(aceh))
-
-        if not aceh.empty:
-            print(
-                aceh[
-                    [
-                        "id",
-                        "id_kota",
-                        "provinsi",
-                        "kota",
-                        "data_x",
-                        "data_y",
-                        "satuan",
-                    ]
-                ]
-                .head(50)
-                .to_string(index=False)
-            )
-
-        print("\n==============================")
-        print("CEK STRUKTUR LOKASI DATABASE")
-        print("==============================")
-
-        print("JUMLAH KOTA UNIK:", database["kota"].nunique())
-
-        print("\nCONTOH KOTA:")
-        print(
-            database["kota"]
+            df_raw["wilayah"]
             .drop_duplicates()
-            .head(50)
             .to_string(index=False)
         )
 
-        print("\nID PROVINSI UNIK:")
+
         print(
-            database["id_provinsi"]
-            .drop_duplicates()
-            .tolist()
+            "\nJUMLAH WILAYAH:",
+            df_raw["wilayah"].nunique()
         )
 
-        print("\nID KOTA UNIK:")
+
         print(
-            database["id_kota"]
-            .drop_duplicates()
-            .tolist()
-        )
-
-        scraping["lokasi_key"] = (
-            scraping["wilayah"]
-            .apply(
-                self.normalize_location
-            )
-        )
-
-        database["lokasi_key"] = (
-            database["kota"]
-            .apply(
-                self.normalize_location
-            )
-        )
-
-        scraping["date_key"] = (
-            pd.to_datetime(
-                scraping["data_x"],
-                errors="coerce"
-            ).dt.date
-        )
-
-        database["date_key"] = (
-            pd.to_datetime(
-                database["data_x"],
-                errors="coerce"
-            ).dt.date
-        )
-
-        result = scraping.merge(
-            database[
-                [
-                    "lokasi_key",
-                    "date_key",
-                    "kota",
-                    "provinsi",
-                    "item",
-                    "satuan",
-                    "data_y"
-                ]
-            ],
-            on=[
-                "lokasi_key",
-                "date_key"
-            ],
-            how="left",
-            suffixes=(
-                "_scraping",
-                "_db"
-            )
-        )
-
-        result["selisih"] = (
-            result["data_y_scraping"]
-            - result["data_y_db"]
-        ).abs()
-
-        result["status_match"] = (
-            "TIDAK MATCH"
-        )
-
-        result.loc[
-            result["data_y_db"].notna(),
-            "status_match"
-        ] = "LOKASI/PERIODE MATCH"
-
-        result.loc[
-            result["selisih"].fillna(
-                999999
-            ) == 0,
-            "status_match"
-        ] = "MATCH"
-
-        result["cek_satuan"] = (
-            result["satuan_db"]
-            .fillna("")
-            .apply(
-                lambda x:
-                "SESUAI"
-                if x.strip().lower()
-                == "poin indeks"
-                else "PERLU CEK"
-            )
-        )
-
-        return result
-    
-    def run(self):
-
-        print("\n================================")
-        print("BPS ETL")
-        print("================================")
-
-        df_raw = self.load_raw()
-
-        indikator_list = (
-            df_raw["indikator"]
-            .dropna()
-            .unique()
+            "\n=============================="
         )
 
         print(
-            "\nINDIKATOR YANG DIPROSES:"
+            "TRANSFORM DATA"
         )
 
-        for indikator in indikator_list:
+        print(
+            "=============================="
+        )
 
-            print(
-                "-",
-                indikator
-            )
 
-        df_nama = self.get_nama_data()
-
-        for indikator in indikator_list:
-
-            print(
-                "\n\n################################"
-            )
-
-            print(
-                "PROCESS:",
-                indikator
-            )
-
-            print(
-                "################################"
-            )
-
-            # 4. MATCH INDIKATOR
-            id_nama_data = (
-                self.match_indikator(
-                    df_nama,
-                    indikator
-                )
-            )
-
-            if id_nama_data is None:
-
-                print(
-                    "SKIP INDIKATOR"
-                )
-
-                continue
-
-            df_db = (
-                self.get_existing_data(
-                    id_nama_data
-                )
-            )
-
-            hasil = (
-                self.match_data(
-                    df_raw,
-                    df_db
-                )
-            )
-
-            print(
-                "\n=============================="
-            )
-
-            print(
-                "HASIL MATCH"
-            )
-
-            print(
-                "=============================="
-            )
-
-            columns = [
+        df = normalize_dataframe(
+            df_raw,
+            text_columns=[
+                "kode_wilayah",
                 "wilayah",
+                "provinsi",
+            ],
+            date_columns=[
                 "data_x",
-                "data_y_scraping",
-                "kota",
-                "data_y_db",
-                "satuan_db",
-                "selisih",
-                "status_match",
-                "cek_satuan"
+            ],
+        )
+
+
+        # BUSINESS LOGIC BPS
+        # BUANG BARIS PROVINSI
+
+        df = df[
+            ~df["kode_wilayah"]
+            .str.endswith("00")
+        ].copy()
+
+
+        print(
+            "JUMLAH ROW SETELAH "
+            "BUANG PROVINSI:",
+            len(df),
+        )
+
+
+        # BUSINESS LOGIC BPS
+        # TENTUKAN KABUPATEN / KOTA
+
+        kode_belakang = (
+            pd.to_numeric(
+                df["kode_wilayah"]
+                .str[-2:],
+                errors="coerce",
+            )
+        )
+
+
+        is_kota = (
+            kode_belakang >= 71
+        )
+
+
+        df["kota"] = (
+            df["wilayah"]
+        )
+
+
+        df.loc[
+            ~is_kota,
+            "kota"
+        ] = (
+            "Kab. "
+            + df.loc[
+                ~is_kota,
+                "wilayah"
             ]
+        )
+
+
+        df.loc[
+            is_kota,
+            "kota"
+        ] = (
+            "Kota "
+            + df.loc[
+                is_kota,
+                "wilayah"
+            ]
+        )
+
+
+        # SPECIAL CASE BPS
+
+        df.loc[
+            df["wilayah"]
+            == "Labuanbatu Utara",
+            "kota",
+        ] = (
+            "Kab. Labuhanbatu Utara"
+        )
+
+
+        df.loc[
+            df["wilayah"]
+            == "Toba",
+            "kota",
+        ] = (
+            "Kab. Toba Samosir"
+        )
+
+
+        # FINAL DATA
+
+        df_final = pd.DataFrame({
+
+            "kota":
+                df["kota"],
+
+            "provinsi":
+                df["provinsi"],
+
+            "nama_indikator":
+                INDIKATOR,
+
+            "nama_item":
+                pd.NA,
+
+            "idnamadata":
+                id_nama_data,
+
+            "data_x":
+                pd.to_datetime(
+                    df["data_x"]
+                    .astype(str),
+                    format="%Y",
+                    errors="coerce",
+                ).dt.strftime(
+                    "31-12-%Y"
+                ),
+
+            "data_y":
+                pd.to_numeric(
+                    df["data_y"],
+                    errors="coerce",
+                ),
+
+            "satuan":
+                (
+                    df["satuan"]
+                    .fillna("Poin Indeks")
+                    .astype(str)
+                    .str.strip()
+                    .replace(
+                        "",
+                        "Poin Indeks",
+                    )
+                ),
+
+            "sumber":
+                "Badan Pusat Statistik (BPS)",
+
+            "note":
+                (
+                    "Data Gini Ratio "
+                    "Kabupaten/Kota "
+                    "berdasarkan BPS"
+                ),
+
+            "nama_data_import":
+                (
+                    "s3://maganghub/"
+                    "bps/final/"
+                    "bps_gini_kabupaten_kota.csv"
+                ),
+        })
+
+
+        df_final = df_final[
+            df_final["data_y"].notna()
+        ].copy()
+
+
+        print(
+            "JUMLAH FINAL ROW:",
+            len(df_final),
+        )
+
+
+        return df_final
+
+
+    def save_final(
+        self,
+        df_final,
+    ):
+
+        print(
+            "\n=============================="
+        )
+
+        print(
+            "SAVE FINAL CSV"
+        )
+
+        print(
+            "=============================="
+        )
+
+
+        save_csv(
+            df_final,
+            FINAL_FILE,
+        )
+
+
+        print(
+            "\nFINAL FILE:",
+            FINAL_FILE,
+        )
+
+
+        return FINAL_FILE
+
+
+    def upload_minio(self):
+
+        print(
+            "\n=============================="
+        )
+
+        print(
+            "UPLOAD MINIO"
+        )
+
+        print(
+            "=============================="
+        )
+
+
+        with open(
+            FINAL_FILE,
+            "rb",
+        ) as file:
+
+            csv_bytes = file.read()
+
+
+        object_name = (
+            "bps/final/"
+            "bps_gini_kabupaten_kota.csv"
+        )
+
+
+        upload_bytes(
+            self.minio_client,
+            MINIO_BUCKET,
+            csv_bytes,
+            object_name,
+            "text/csv",
+        )
+
+
+        print(
+            "MinIO upload berhasil:"
+        )
+
+        print(
+            f"{MINIO_BUCKET}/{object_name}"
+        )
+
+
+    def run(
+        self,
+        df_raw=None,
+        save_outputs=True,
+    ):
+
+        print(
+            "\n================================"
+        )
+
+        print(
+            "BPS ETL"
+        )
+
+        print(
+            "================================"
+        )
+
+
+        if df_raw is None:
+
+            df_raw = self.load_raw()
+
+        else:
 
             print(
-                hasil[
-                    columns
-                ].to_string(
-                    index=False
-                )
+                "\nMENGGUNAKAN RAW DATA "
+                "DARI MEMORY"
             )
 
             print(
-                "\nSUMMARY:"
+                "JUMLAH RAW DATA:",
+                len(df_raw),
+            )
+
+
+        df_nama = (
+            self.get_nama_data()
+        )
+
+
+        id_nama_data = (
+            self.match_nama_data(
+                df_nama
+            )
+        )
+
+
+        if id_nama_data is None:
+
+            raise RuntimeError(
+                "Gagal mendapatkan "
+                "idnamadata."
+            )
+
+
+        df_final = self.transform(
+            df_raw,
+            id_nama_data,
+        )
+
+
+        if save_outputs:
+
+            self.save_final(
+                df_final
+            )
+
+            self.upload_minio()
+
+        else:
+
+            print(
+                "\n================================"
             )
 
             print(
-                hasil[
-                    "status_match"
-                ].value_counts()
-                .to_string()
+                "DRY RUN - OUTPUT "
+                "TIDAK DISIMPAN"
             )
 
             print(
-                "\nCEK SATUAN:"
+                "================================"
             )
 
-            print(
-                hasil[
-                    "cek_satuan"
-                ].value_counts()
-                .to_string()
-            )
 
-            return hasil
+        return df_final
+
 
 def main():
+
+    parser = argparse.ArgumentParser()
+
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Run scraping dan transform "
+            "tanpa menyimpan/upload output"
+        ),
+    )
+
+
+    args = parser.parse_args()
+
 
     print(
         "========================================"
@@ -859,24 +1315,52 @@ def main():
         "========================================"
     )
 
-    scraper = BPSScraper()
 
-    df_raw = scraper.run()
+    df_raw = scrape_all(
+        save_raw=not args.dry_run
+    )
+
+
+    print(
+        "\nRAW DATA SELESAI"
+    )
+
+    print(
+        "JUMLAH RAW ROW:",
+        len(df_raw),
+    )
+
 
     etl = BPSETL()
 
-    hasil = etl.run()
+
+    df_final = etl.run(
+        df_raw=df_raw,
+        save_outputs=not args.dry_run,
+    )
+
 
     print(
         "\n========================================"
     )
 
     print(
-        "SELESAI"
+        "PIPELINE SELESAI"
     )
 
     print(
         "========================================"
+    )
+
+
+    print(
+        "RAW ROW:",
+        len(df_raw),
+    )
+
+    print(
+        "FINAL ROW:",
+        len(df_final),
     )
 
 
