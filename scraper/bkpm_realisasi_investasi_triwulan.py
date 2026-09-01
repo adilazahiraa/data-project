@@ -1093,6 +1093,206 @@ def fetch(params=None):
 
     return full_df
 
+def test_main(
+    dataset=1,
+    tahun_awal=2010,
+    tahun_akhir=2026,
+):
+    s = BKPMScraper()
+
+    datasets = s.get_dataset_links()
+
+    if not datasets:
+        raise RuntimeError(
+            "Tak ada dataset di data.bkpm.go.id "
+            "(halaman pencarian berubah?)"
+        )
+
+    # ========================================
+    # MODE DATASET TERBARU
+    # ========================================
+
+    if str(dataset).lower() == "last":
+
+        kandidat = []
+
+        triwulan_map = {
+            "I": 1,
+            "II": 2,
+            "III": 3,
+            "IV": 4,
+        }
+
+        for d in datasets:
+
+            judul = str(
+                d.get("judul", "")
+            )
+
+            match = re.search(
+                r"Triwulan\s+"
+                r"(I{1,3}|IV)"
+                r"\s+Tahun\s+"
+                r"(\d{4})",
+                judul,
+                re.IGNORECASE,
+            )
+
+            if not match:
+                continue
+
+            triwulan_romawi = (
+                match.group(1).upper()
+            )
+
+            tahun = int(
+                match.group(2)
+            )
+
+            triwulan = triwulan_map.get(
+                triwulan_romawi
+            )
+
+            if triwulan is None:
+                continue
+
+            if not (
+                tahun_awal
+                <= tahun
+                <= tahun_akhir
+            ):
+                continue
+
+            kandidat.append({
+                "dataset": d,
+                "tahun": tahun,
+                "triwulan": triwulan,
+            })
+
+        if not kandidat:
+            raise RuntimeError(
+                "Tidak ditemukan dataset "
+                "dengan periode yang sesuai."
+            )
+
+        # Cari periode paling terbaru
+        tahun_terbaru = max(
+            x["tahun"]
+            for x in kandidat
+        )
+
+        triwulan_terbaru = max(
+            x["triwulan"]
+            for x in kandidat
+            if x["tahun"] == tahun_terbaru
+        )
+
+        # Ambil dataset dengan periode terbaru
+        kandidat_terbaru = [
+            x
+            for x in kandidat
+            if (
+                x["tahun"]
+                == tahun_terbaru
+                and x["triwulan"]
+                == triwulan_terbaru
+            )
+        ]
+
+        print(
+            "\nDATASET TERBARU:"
+        )
+
+        for x in kandidat_terbaru:
+            print(
+                x["dataset"]["judul"]
+            )
+
+        print(
+            "PERIODE TERBARU:",
+            f"{tahun_terbaru} - "
+            f"Triwulan {triwulan_terbaru}",
+        )
+
+        # Kalau ada lebih dari satu dataset
+        # dengan periode yang sama, ambil semuanya
+        pilih = [
+            x["dataset"]
+            for x in kandidat_terbaru
+        ]
+
+    # ========================================
+    # MODE DATASET BERDASARKAN NOMOR
+    # ========================================
+
+    else:
+
+        dataset = int(dataset)
+
+        pilih = datasets[:dataset]
+
+    # ========================================
+    # AMBIL DATA
+    # ========================================
+
+    bagian = []
+
+    for d in pilih:
+
+        pid = s.get_parent_id(
+            d["url"]
+        )
+
+        if not pid:
+            continue
+
+        rows = s.get_data(pid)
+
+        if rows:
+            bagian.append(
+                s.prepare_dataframe(
+                    pd.DataFrame(rows)
+                )
+            )
+
+    if not bagian:
+        raise RuntimeError(
+            "Dataset ditemukan tapi "
+            "tak ada baris yang terbaca."
+        )
+
+    df = pd.concat(
+        bagian,
+        ignore_index=True,
+    )
+
+    # ========================================
+    # FILTER TAHUN
+    # ========================================
+
+    tahun = (
+        df["periode"]
+        .astype(str)
+        .str[:4]
+    )
+
+    df = df[
+        tahun.str.isdigit()
+    ]
+
+    df = df[
+        df["periode"]
+        .astype(str)
+        .str[:4]
+        .astype(int)
+        .between(
+            tahun_awal,
+            tahun_akhir,
+        )
+    ].copy()
+
+    return df
+
 def main(tahun_awal=2010, tahun_akhir=2026):
 
     print(
@@ -1741,14 +1941,15 @@ def main(tahun_awal=2010, tahun_akhir=2026):
                         jenis_data="tenaga_kerja",
                     )
 
+                    nama_data_tenaga_kerja = etl.generate_nama_data(
+                        status,
+                        sektor_utama,
+                        lokasi,
+                        "tenaga_kerja", 
+                    )
+
                     print(
-                        f"Nama data: "
-                        f"{etl.generate_nama_data(
-                            status,
-                            sektor_utama,
-                            lokasi,
-                            "tenaga_kerja",
-                        )}"
+                        f"Nama data: {nama_data_tenaga_kerja}"
                     )
 
     for status in ["PMA", "PMDN"]:
