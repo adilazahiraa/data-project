@@ -55,10 +55,160 @@ DATABASE_BASE_URL = (
 )
 
 
-INDIKATOR = (
-    "Gini Ratio Menurut Kabupaten Kota"
-)
+BPS_CONFIG = {
+    "gini_ratio": {
+        "indikator": "Gini Ratio Menurut Kabupaten Kota",
+        "configs": [
+            {
+                "domain_id": "1200",
+                "provinsi": "Sumatera Utara",
+                "var_id": 467,
+            },
+            {
+                "domain_id": "1300",
+                "provinsi": "Sumatera Barat",
+                "var_id": 83,
+            },
+            {
+                "domain_id": "1700",
+                "provinsi": "Bengkulu",
+                "var_id": 268,
+            },
+            {
+                "domain_id": "1800",
+                "provinsi": "Lampung",
+                "var_id": 632,
+            },
+            {
+                "domain_id": "3400",
+                "provinsi": "D.I. Yogyakarta",
+                "var_id": 333,
+            },
+            {
+                "domain_id": "3600",
+                "provinsi": "Banten",
+                "var_id": 425,
+            },
+            {
+                "domain_id": "6200",
+                "provinsi": "Kalimantan Tengah",
+                "var_id": 371,
+            },
+            {
+                "domain_id": "6400",
+                "provinsi": "Kalimantan Timur",
+                "var_id": 549,
+            },
+            {
+                "domain_id": "7100",
+                "provinsi": "Sulawesi Utara",
+                "var_id": 280,
+            },
+            {
+                "domain_id": "7300",
+                "provinsi": "Sulawesi Selatan",
+                "var_id": 1743,
+            },
+            {
+                "domain_id": "1400",
+                "provinsi": "Riau",
+                "var_id": 387,
+            },
+            {
+                "domain_id": "1500",
+                "provinsi": "Jambi",
+                "var_id": 51,
+            },
+            {
+                "domain_id": "1600",
+                "provinsi": "Sumatera Selatan",
+                "var_id": 623,
+            },
+            {
+                "domain_id": "1900",
+                "provinsi": "Kepulauan Bangka Belitung",
+                "var_id": 1174,
+            },
+            {
+                "domain_id": "3100",
+                "provinsi": "DKI Jakarta",
+                "var_id": 884,
+            },
+            {
+                "domain_id": "3500",
+                "provinsi": "Jawa Timur",
+                "var_id": 488,
+            },
+            {
+                "domain_id": "5100",
+                "provinsi": "Bali",
+                "var_id": 41,
+            },
+            {
+                "domain_id": "5200",
+                "provinsi": "Nusa Tenggara Barat",
+                "var_id": 426,
+            },
+            {
+                "domain_id": "6100",
+                "provinsi": "Kalimantan Barat",
+                "var_id": 41,
+            },
+            {
+                "domain_id": "6500",
+                "provinsi": "Kalimantan Utara",
+                "var_id": 495,
+            },
+            {
+                "domain_id": "7200",
+                "provinsi": "Sulawesi Tengah",
+                "var_id": 52,
+            },
+            {
+                "domain_id": "7400",
+                "provinsi": "Sulawesi Tenggara",
+                "var_id": 467,
+            },
+            {
+                "domain_id": "8200",
+                "provinsi": "Maluku Utara",
+                "var_id": 142,
+            },
+            {
+                "domain_id": "9100",
+                "provinsi": "Papua Barat",
+                "var_id": 171,
+            },
+            {
+                "domain_id": "9400",
+                "provinsi": "Papua",
+                "var_id": 50,
+            },
+            {
+                "domain_id": "7600",
+                "provinsi": "Sulawesi Barat",
+                "var_id": 166,
+            },
+        ],
+        "default_satuan": "Poin Indeks",
+        "sumber": "Badan Pusat Statistik (BPS)",
+        "note": "Data Gini Ratio Kabupaten/Kota berdasarkan BPS",
+        "nama_data_import": (
+            "s3://maganghub/bps/final/"
+            "bps_gini_kabupaten_kota.csv"
+        ),
+    },
 
+    # NANTI DATA BPS LAIN TINGGAL DITAMBAHKAN
+}
+
+def get_bps_config(indikator):
+    if indikator not in BPS_CONFIG:
+        raise ValueError(
+            f"Indikator BPS tidak ditemukan: {indikator}"
+        )
+
+    return BPS_CONFIG[indikator]
 
 RAW_DIR = (
     PROJECT_ROOT
@@ -88,141 +238,6 @@ FINAL_FILE = (
     FINAL_DIR
     / "bps_gini_kabupaten_kota.csv"
 )
-
-
-GINI_CONFIG = [
-    {
-        "domain_id": "1200",
-        "provinsi": "Sumatera Utara",
-        "var_id": 467,
-    },
-    {
-        "domain_id": "1300",
-        "provinsi": "Sumatera Barat",
-        "var_id": 83,
-    },
-    {
-        "domain_id": "1700",
-        "provinsi": "Bengkulu",
-        "var_id": 268,
-    },
-    {
-        "domain_id": "1800",
-        "provinsi": "Lampung",
-        "var_id": 632,
-    },
-    {
-        "domain_id": "3400",
-        "provinsi": "D.I. Yogyakarta",
-        "var_id": 333,
-    },
-    {
-        "domain_id": "3600",
-        "provinsi": "Banten",
-        "var_id": 425,
-    },
-    {
-        "domain_id": "6200",
-        "provinsi": "Kalimantan Tengah",
-        "var_id": 371,
-    },
-    {
-        "domain_id": "6400",
-        "provinsi": "Kalimantan Timur",
-        "var_id": 549,
-    },
-    {
-        "domain_id": "7100",
-        "provinsi": "Sulawesi Utara",
-        "var_id": 280,
-    },
-    {
-        "domain_id": "7300",
-        "provinsi": "Sulawesi Selatan",
-        "var_id": 1743,
-    },
-    {
-        "domain_id": "1400",
-        "provinsi": "Riau",
-        "var_id": 387,
-    },
-    {
-        "domain_id": "1500",
-        "provinsi": "Jambi",
-        "var_id": 51,
-    },
-    {
-        "domain_id": "1600",
-        "provinsi": "Sumatera Selatan",
-        "var_id": 623,
-    },
-    {
-        "domain_id": "1900",
-        "provinsi": "Kepulauan Bangka Belitung",
-        "var_id": 1174,
-    },
-    {
-        "domain_id": "3100",
-        "provinsi": "DKI Jakarta",
-        "var_id": 884,
-    },
-    {
-        "domain_id": "3500",
-        "provinsi": "Jawa Timur",
-        "var_id": 488,
-    },
-    {
-        "domain_id": "5100",
-        "provinsi": "Bali",
-        "var_id": 41,
-    },
-    {
-        "domain_id": "5200",
-        "provinsi": "Nusa Tenggara Barat",
-        "var_id": 426,
-    },
-    {
-        "domain_id": "6100",
-        "provinsi": "Kalimantan Barat",
-        "var_id": 41,
-    },
-    {
-        "domain_id": "6500",
-        "provinsi": "Kalimantan Utara",
-        "var_id": 495,
-    },
-    {
-        "domain_id": "7200",
-        "provinsi": "Sulawesi Tengah",
-        "var_id": 52,
-    },
-    {
-        "domain_id": "7400",
-        "provinsi": "Sulawesi Tenggara",
-        "var_id": 467,
-    },
-    {
-        "domain_id": "8200",
-        "provinsi": "Maluku Utara",
-        "var_id": 142,
-    },
-    {
-        "domain_id": "9100",
-        "provinsi": "Papua Barat",
-        "var_id": 171,
-    },
-    {
-        "domain_id": "9400",
-        "provinsi": "Papua",
-        "var_id": 50,
-    },
-    {
-        "domain_id": "7600",
-        "provinsi": "Sulawesi Barat",
-        "var_id": 166,
-    },
-]
-
 
 class BPSScraper:
 
@@ -322,6 +337,7 @@ class BPSScraper:
         self,
         result,
         tahun,
+        indikator=None,
     ):
 
         vervar = result.get(
@@ -360,10 +376,10 @@ class BPSScraper:
         nama_indikator = (
             var[0].get(
                 "label",
-                INDIKATOR,
+                indikator,
             )
             if var
-            else INDIKATOR
+            else indikator
         )
 
 
@@ -398,14 +414,6 @@ class BPSScraper:
 
 
             wilayah_id = key[:4]
-            var_id = key[4:7]
-
-
-            if var_id != str(
-                self.var_id
-            ):
-                continue
-
 
             wilayah = (
                 wilayah_map.get(
@@ -446,19 +454,12 @@ class BPSScraper:
         return pd.DataFrame(rows)
 
 
-    def run(self):
-
-        print(
-            "\n================================"
-        )
-
-        print(
-            "BPS GINI RATIO SCRAPER"
-        )
-
-        print(
-            "================================"
-        )
+    def run(
+        self,
+        tahun_awal=None,
+        tahun_akhir=None,
+        indikator=None,
+    ):
 
 
         print(
@@ -481,16 +482,30 @@ class BPSScraper:
             self.get_available_years()
         )
 
+        # Jika batas tahun diberikan, batasi data yang diambil.
+        # Ini dipakai untuk skenario current update agar tidak
+        # selalu menarik seluruh histori.
+        if tahun_awal is not None:
+            years = [
+                year
+                for year in years
+                if int(year["th"]) >= int(tahun_awal)
+            ]
+
+        if tahun_akhir is not None:
+            years = [
+                year
+                for year in years
+                if int(year["th"]) <= int(tahun_akhir)
+            ]
 
         print(
-            "\nTAHUN TERSEDIA:"
+            "\nTAHUN TERSEDIA / DIPILIH:"
         )
 
         print(years)
 
-
         all_data = []
-
 
         for year in years:
 
@@ -522,6 +537,7 @@ class BPSScraper:
             df = self.parse_data(
                 result,
                 tahun,
+                indikator=indikator,
             )
 
 
@@ -545,25 +561,18 @@ class BPSScraper:
         )
 
 
-def scrape_all(save_raw=True):
-
-    print(
-        "\n========================================"
-    )
-
-    print(
-        "SCRAPE GINI RATIO KABUPATEN/KOTA"
-    )
-
-    print(
-        "========================================"
-    )
-
+def scrape_all(
+    configs,
+    indikator,
+    save_raw=True,
+    tahun_awal=None,
+    tahun_akhir=None,
+):
 
     all_data = []
 
 
-    for config in GINI_CONFIG:
+    for config in configs:
 
         print(
             "\n--------------------------------"
@@ -587,7 +596,11 @@ def scrape_all(save_raw=True):
 
         try:
 
-            df = scraper.run()
+            df = scraper.run(
+                tahun_awal=tahun_awal,
+                tahun_akhir=tahun_akhir,
+                indikator=indikator,
+            )
 
 
             if df.empty:
@@ -638,7 +651,6 @@ def scrape_all(save_raw=True):
         ignore_index=True,
     )
 
-
     if save_raw:
 
         save_parquet(
@@ -646,62 +658,84 @@ def scrape_all(save_raw=True):
             RAW_FILE,
         )
 
-        print(
-            "\n================================"
-        )
-
-        print(
-            "RAW PARQUET SELESAI"
-        )
-
-        print(
-            "================================"
-        )
-
-        print(
-            "FILE:",
-            RAW_FILE,
-        )
-
-
-    else:
-
-        print(
-            "\n================================"
-        )
-
-        print(
-            "DRY RUN - RAW TIDAK DISIMPAN"
-        )
-
-        print(
-            "================================"
-        )
-
-
     print(
         "JUMLAH ROW:",
         len(df_raw),
     )
 
-
-    print(
-        "\nJUMLAH ROW PER PROVINSI:"
-    )
-
-
-    print(
-        df_raw
-        .groupby("provinsi")
-        .size()
-        .sort_values(
-            ascending=False
-        )
-    )
-
-
     return df_raw
 
+
+def get_existing_xflask_data(id_nama_data):
+    """
+    Mengambil data existing dari XFlask sebagai referensi
+    Tidak melakukan insert/update
+    """
+    if not KATADATA_API_KEY:
+        raise RuntimeError(
+            "KATADATA_API_KEY tidak ditemukan di .env"
+        )
+    
+    session = create_session()
+
+    session.headers.update({
+        "X-API-Key": KATADATA_API_KEY
+    })
+
+    response = session.get(
+        f"{DATABASE_BASE_URL}/data",
+        params={
+            "id_nama_data": id_nama_data
+        },
+        timeout=60,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    if not isinstance(data, list):
+        raise RuntimeError(
+            f"Response XFlask tidak berupa list: {data}"
+        )
+
+    return pd.DataFrame(data)
+
+def inspect_xflask_gini(id_nama_data=14288):
+    """
+    Mengecek struktur data Gini Ration yang sudah ada di XFlask.
+    """
+
+    df = get_existing_xflask_data(id_nama_data)
+
+    print("\n" + "=" * 60)
+    print("EXISTING XFLASK")
+    print("=" * 60)
+
+    print("ID NAMA DATA:", id_nama_data)
+    print("RAW RECORD:", len(df))
+
+    print("\nKOLOM:")
+    print(df.columns.tolist())
+
+    if "provinsi" in df.columns:
+        print("\nPROVINISI:")
+        print(
+            df.groupby("provinsi")["kota"]
+            .unique()
+            .sort_values(ascending=False)
+            .to_string()
+        )
+
+    if "item" in df.columns:
+        print("\nITEM:")
+        print(
+            df["item"]
+            .value_counts(dropna=False)
+            .to_string()
+        )
+
+    return df
 
 class BPSETL:
 
@@ -812,6 +846,7 @@ class BPSETL:
     def match_nama_data(
         self,
         df_nama,
+        indikator,
     ):
 
         print(
@@ -829,7 +864,7 @@ class BPSETL:
 
         print(
             "TARGET:",
-            INDIKATOR,
+            indikator,
         )
 
 
@@ -852,7 +887,7 @@ class BPSETL:
 
 
         target = (
-            INDIKATOR
+            indikator
             .strip()
             .lower()
         )
@@ -873,7 +908,7 @@ class BPSETL:
 
             print(
                 "TARGET:",
-                INDIKATOR,
+                indikator,
             )
 
             return None
@@ -909,7 +944,29 @@ class BPSETL:
         self,
         df_raw,
         id_nama_data,
+        config,
     ):
+
+        indikator = config["indikator"]
+        default_satuan = config.get (
+            "default_satuan",
+            pd.NA,
+        )
+
+        sumber = config.get (
+            "sumber",
+            "Badan Pusat Statistik",
+        )
+
+        note = config.get(
+            "note",
+            pd.NA,
+        )
+
+        nama_data_import = config.get(
+            "nama_data_import",
+            pd.NA,
+        )
 
         print(
             "\nWILAYAH RAW:"
@@ -1047,7 +1104,7 @@ class BPSETL:
                 df["provinsi"],
 
             "nama_indikator":
-                INDIKATOR,
+                indikator,
 
             "nama_item":
                 pd.NA,
@@ -1055,15 +1112,20 @@ class BPSETL:
             "idnamadata":
                 id_nama_data,
 
-            "data_x":
+            "data_x": (
                 pd.to_datetime(
-                    df["data_x"]
-                    .astype(str),
-                    format="%Y",
+                    df["data_x"],
                     errors="coerce",
-                ).dt.strftime(
-                    "31-12-%Y"
-                ),
+                )
+                .apply(
+                    lambda x: (
+                        x.replace(month=12, day=31)
+                        if pd.notna(x)
+                        else pd.NaT
+                    )
+                )
+                .dt.strftime("%d-%m-%Y")
+            ),
 
             "data_y":
                 pd.to_numeric(
@@ -1071,34 +1133,22 @@ class BPSETL:
                     errors="coerce",
                 ),
 
-            "satuan":
-                (
-                    df["satuan"]
-                    .fillna("Poin Indeks")
-                    .astype(str)
-                    .str.strip()
-                    .replace(
-                        "",
-                        "Poin Indeks",
-                    )
-                ),
+            "satuan": (
+                df["satuan"]
+                .fillna(default_satuan)
+                .astype("string")
+                .str.strip()
+                .replace(
+                    "",
+                    default_satuan,
+                )
+            ),
 
-            "sumber":
-                "Badan Pusat Statistik (BPS)",
+            "sumber": sumber, 
 
-            "note":
-                (
-                    "Data Gini Ratio "
-                    "Kabupaten/Kota "
-                    "berdasarkan BPS"
-                ),
+            "note": note,
 
-            "nama_data_import":
-                (
-                    "s3://maganghub/"
-                    "bps/final/"
-                    "bps_gini_kabupaten_kota.csv"
-                ),
+            "nama_data_import": nama_data_import,
         })
 
 
@@ -1200,66 +1250,57 @@ class BPSETL:
         self,
         df_raw=None,
         save_outputs=True,
+        config=None,
     ):
-
         print(
             "\n================================"
         )
-
         print(
             "BPS ETL"
         )
-
         print(
             "================================"
         )
 
+        if config is None:
+            config = get_bps_config(
+                "gini_ratio"
+            )
 
         if df_raw is None:
-
             df_raw = self.load_raw()
-
         else:
-
             print(
                 "\nMENGGUNAKAN RAW DATA "
                 "DARI MEMORY"
             )
-
             print(
                 "JUMLAH RAW DATA:",
                 len(df_raw),
             )
 
+        indikator = config["indikator"]
 
-        df_nama = (
-            self.get_nama_data()
+        df_nama = self.get_nama_data()
+
+        id_nama_data = self.match_nama_data(
+            df_nama,
+            indikator,
         )
-
-
-        id_nama_data = (
-            self.match_nama_data(
-                df_nama
-            )
-        )
-
 
         if id_nama_data is None:
-
             raise RuntimeError(
-                "Gagal mendapatkan "
-                "idnamadata."
+                f"Gagal mendapatkan "
+                f"idnamadata untuk {indikator}."
             )
-
 
         df_final = self.transform(
             df_raw,
             id_nama_data,
+            config,
         )
 
-
         if save_outputs:
-
             self.save_final(
                 df_final
             )
@@ -1267,104 +1308,349 @@ class BPSETL:
             self.upload_minio()
 
         else:
-
             print(
                 "\n================================"
             )
-
             print(
                 "DRY RUN - OUTPUT "
                 "TIDAK DISIMPAN"
             )
-
             print(
                 "================================"
             )
 
-
         return df_final
 
-def fetch(params=None):
-    return scrape_all(save_raw=False)
+def _resolve_gini_idnamadata(
+    idnamadata=None,
+):
+    """Ambil idnamadata Gini Ratio jika tidak diberikan."""
 
-def main():
+    if idnamadata is not None:
+        return int(idnamadata)
 
-    parser = argparse.ArgumentParser()
-
-
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help=(
-            "Run scraping dan transform "
-            "tanpa menyimpan/upload output"
-        ),
+    config = get_bps_config(
+        "gini_ratio"
     )
-
-
-    args = parser.parse_args()
-
-
-    print(
-        "========================================"
-    )
-
-    print(
-        "BPS GINI RATIO PIPELINE"
-    )
-
-    print(
-        "========================================"
-    )
-
-
-    df_raw = scrape_all(
-        save_raw=not args.dry_run
-    )
-
-
-    print(
-        "\nRAW DATA SELESAI"
-    )
-
-    print(
-        "JUMLAH RAW ROW:",
-        len(df_raw),
-    )
-
 
     etl = BPSETL()
 
+    df_nama = etl.get_nama_data()
 
-    df_final = etl.run(
-        df_raw=df_raw,
-        save_outputs=not args.dry_run,
+    id_nama_data = etl.match_nama_data(
+        df_nama,
+        config["indikator"],
     )
 
+    if id_nama_data is None:
+        raise RuntimeError(
+            "Gagal mendapatkan "
+            "idnamadata Gini Ratio."
+        )
 
-    print(
-        "\n========================================"
+    return id_nama_data
+
+def get_latest_bps_year(config):
+    """
+    Mengambil tahun terbaru yang tersedia dari seluruh konfigurasi BPS.
+    """
+
+    tahun_terbaru = None
+
+    for scraper_config in config["configs"]:
+        scraper = BPSScraper(
+            domain_id=scraper_config["domain_id"],
+            var_id=scraper_config["var_id"],
+            provinsi=scraper_config["provinsi"],
+        )
+
+        years = scraper.get_available_years()
+
+        tahun_valid = [
+            int(year["th"])
+            for year in years
+            if str(year.get("th", "")).isdigit()
+        ]
+
+        if tahun_valid:
+            kandidat = max(tahun_valid)
+
+            if (
+                tahun_terbaru is None
+                or kandidat > tahun_terbaru
+            ):
+                tahun_terbaru = kandidat
+
+    if tahun_terbaru is None:
+        raise RuntimeError(
+            "Tidak ditemukan tahun data BPS."
+        )
+
+    return tahun_terbaru
+
+def get_existing_latest_year(id_nama_data):
+    """
+    Mengambil data existing dari XFlask dan mencari
+    data_x terbaru yang sudah tersimpan.
+    """
+
+    df_existing = get_existing_xflask_data(
+        id_nama_data
     )
 
-    print(
-        "PIPELINE SELESAI"
+    if df_existing.empty:
+        return None
+
+    if "data_x" not in df_existing.columns:
+        raise RuntimeError(
+            "Kolom data_x tidak ditemukan "
+            "di data existing XFlask."
+        )
+
+    data_x = pd.to_datetime(
+        df_existing["data_x"],
+        errors="coerce",
+        dayfirst=True,
     )
 
-    print(
-        "========================================"
+    data_x = data_x.dropna()
+
+    if data_x.empty:
+        return None
+
+    return data_x.dt.year.max()
+
+def map_turvar_to_idnamadata(
+    df,
+    turvar_column,
+    mapping,
+):
+    """
+    Mapping nilai turvar ke id_nama_data.
+
+    Contoh:
+        turvar = ["indikator 1", "indikator 2", "indikator 3"]
+
+        mapping = {
+            "indikator 1": 1,
+            "indikator 2": 2,
+            "indikator 3": 3,
+        }
+    """
+
+    if turvar_column not in df.columns:
+        raise KeyError(
+            f"Kolom turvar tidak ditemukan: {turvar_column}"
+        )
+
+    df = df.copy()
+
+    df["idnamadata"] = (
+        df[turvar_column]
+        .map(mapping)
     )
 
-
-    print(
-        "RAW ROW:",
-        len(df_raw),
+    unmapped = (
+        df.loc[
+            df["idnamadata"].isna(),
+            turvar_column,
+        ]
+        .dropna()
+        .unique()
+        .tolist()
     )
+
+    if unmapped:
+        raise ValueError(
+            "Ada nilai turvar yang belum memiliki mapping: "
+            f"{unmapped}"
+        )
+
+    return df
+
+def update_bps_dataset(
+    config,
+    idnamadata=None,
+    iditem=None,
+    backfill=True,
+):
+    """
+    Generic update untuk dataset BPS.
+
+    backfill=True:
+        Ambil seluruh histori.
+
+    backfill=False:
+        Ambil data terbaru + maksimal dua periode sebelumnya.
+    """
+
+    # Resolve id_nama_data
+    if idnamadata is None:
+        etl = BPSETL()
+
+        df_nama = etl.get_nama_data()
+
+        idnamadata = etl.match_nama_data(
+            df_nama,
+            config["indikator"],
+        )
+
+        if idnamadata is None:
+            raise RuntimeError(
+                f"Gagal mendapatkan idnamadata "
+                f"untuk {config['indikator']}."
+            )
+
+    if backfill:
+
+        tahun_awal = None
+        tahun_akhir = None
+
+        print("\n========================================")
+        print("BPS DATASET - BACKFILL")
+        print("========================================")
+
+    else:
+
+        tahun_existing = get_existing_latest_year(
+            idnamadata
+        )
+
+        tahun_terbaru = get_latest_bps_year(
+            config
+        )
+
+        if tahun_existing is None:
+            tahun_awal = tahun_terbaru - 2
+        else:
+            tahun_awal = tahun_existing - 2
+
+        tahun_akhir = tahun_terbaru
+
+        print(
+            "\nTAHUN TERAKHIR EXISTING:",
+            tahun_existing,
+        )
+
+        print(
+            "TAHUN TERBARU BPS:",
+            tahun_terbaru,
+        )
+
+        print(
+            "RENTANG UPDATE:",
+            f"{tahun_awal}-{tahun_akhir}",
+        )
+
+    df_raw = scrape_all(
+        configs=config["configs"],
+        indikator=config["indikator"],
+        save_raw=False,
+        tahun_awal=tahun_awal,
+        tahun_akhir=tahun_akhir,
+    )
+
+    if df_raw.empty:
+        raise RuntimeError(
+            f"Tidak ada data yang berhasil diambil "
+            f"untuk {config['indikator']}."
+        )
+
+    etl = BPSETL()
+
+    df_final = etl.transform(
+        df_raw,
+        idnamadata,
+        config,
+    )
+
+    return df_final
+
+def update_idnamadata_ginirasio(
+    idnamadata=None,
+    iditem=None,
+    backfill=True,
+):
+    """
+    Update dataframe Gini Ratio.
+    """
+
+    config = get_bps_config(
+        "gini_ratio"
+    )
+
+    return update_bps_dataset(
+        config=config,
+        idnamadata=idnamadata,
+        iditem=iditem,
+        backfill=backfill,
+    )
+
+def update_curr_ginirasio():
+    """Ambil data terbaru + dua tahun sebelumnya untuk update rutin."""
+
+    return update_idnamadata_ginirasio(
+        backfill=False,
+    )
+
+def fetch(params=None):
+    params = params or {}
+
+    idnamadata = params.get(
+        "idnamadata"
+    )
+
+    iditem = params.get(
+        "iditem"
+    )
+
+    backfill = params.get(
+        "backfill",
+        False,
+    )
+
+    if idnamadata is not None:
+        idnamadata = int(idnamadata)
+
+    if isinstance(backfill, str):
+        backfill = (
+            backfill.strip().lower()
+            in {"true", "1", "yes", "y"}
+        )
+
+    return update_idnamadata_ginirasio(
+        idnamadata=idnamadata,
+        iditem=iditem,
+        backfill=backfill,
+    )
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Ambil seluruh histori data BPS",
+    )
+
+    args = parser.parse_args()
+
+    print("\n========================================")
+    print("BPS GINI RATIO PIPELINE")
+    print("========================================")
+
+    df_final = update_idnamadata_ginirasio(
+        backfill=args.backfill
+    )
+
+    print("\n========================================")
+    print("PIPELINE SELESAI")
+    print("========================================")
 
     print(
         "FINAL ROW:",
         len(df_final),
     )
-
 
 if __name__ == "__main__":
     main()
