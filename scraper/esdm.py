@@ -1505,6 +1505,35 @@ class ESDMETL:
 
         return df_final
 
+def fetch(params=None):
+
+    params = params or {}
+
+    idnamadata = params.get("idnamadata")
+
+    if idnamadata is not None:
+        idnamadata = int(idnamadata)
+
+    # CADANGAN MINYAK BUMI
+    if idnamadata == 4784:
+
+        config = ESDM_CONFIG[4784]
+
+        scraper = ESDMScraper(
+            source_url=config["source_url"],
+            jumlah_tahun=config["jumlah_tahun_scrape"],
+        )
+
+        etl = ESDMETL(
+            id_nama_data=4784,
+            nama_data_import=config["source_url"],
+        )
+
+        return etl.run(scraper)
+
+    raise ValueError(
+        f"idnamadata ESDM tidak dikenali: {idnamadata}"
+    )
 
 # ============================================================
 # MAIN
