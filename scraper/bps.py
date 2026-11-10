@@ -1,3 +1,4 @@
+
 import os
 import argparse
 import requests
@@ -9,55 +10,40 @@ from pathlib import Path
 import pandas as pd
 from dotenv import load_dotenv
 
-
 from utils.api import (
     create_session,
+    get_json,
 )
 
 from utils.file import (
     read_parquet,
     save_parquet,
     save_csv,
+    get_storage_paths,
 )
 
 from utils.data import (
     normalize_dataframe,
+    get_config,
 )
 
 from utils.storage import (
+    MINIO_BUCKET,
     get_minio_client,
     upload_bytes,
 )
 
-
 load_dotenv(override=True)
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-PROJECT_ROOT = (
-    Path(__file__).resolve().parents[1]
-)
+BPS_API_KEY = os.getenv("BPS_API_KEY")
+KATADATA_API_KEY = os.getenv("KATADATA_API_KEY")
 
+BPS_BASE_URL = "https://webapi.bps.go.id/v1/api"
+DATABASE_BASE_URL = "https://xflask.databoks.id/database"
 
-MINIO_BUCKET = "maganghub"
-
-
-BPS_API_KEY = os.getenv(
-    "BPS_API_KEY"
-)
-
-KATADATA_API_KEY = os.getenv(
-    "KATADATA_API_KEY"
-)
-
-
-BPS_BASE_URL = (
-    "https://webapi.bps.go.id/v1/api"
-)
-
-DATABASE_BASE_URL = (
-    "https://xflask.databoks.id/database"
-)
-
+BPS_API_SESSION = create_session()
 
 BPS_CONFIG = {
     "gini_ratio": {
@@ -203,7 +189,7 @@ BPS_CONFIG = {
             "s3://maganghub/bps/final/"
             "bps_gini_kabupaten_kota.csv"
         ),
-        
+
     },
 
     # NANTI DATA BPS LAIN TINGGAL DITAMBAHKAN
@@ -407,7 +393,8 @@ BPS_CONFIG = {
             },
         ],
     },
-      # HOTEL AKOMODASI
+
+    # HOTEL AKOMODASI
     "hotel_akomodasi": {
         "idnamadata": 9869,
         "indikator": "Jumlah Akomodasi Hotel Berbintang Menurut Provinsi",
@@ -436,52 +423,855 @@ BPS_CONFIG = {
             "statistik-hotel-dan-akomodasi-lainnya-di-indonesia-2024.pdf"
         ),
     },
+    # PERCERAIAN AKIBAT MASALAH LAIN-LAIN
+    "perceraian_lain_lain": {
+        "idnamadata": 16517,
+        "indikator": (
+            "Jumlah Perceraian Menurut Provinsi "
+            "Akibat Masalah Lain-Lain"
+        ),
+        "default_satuan": "Jumlah",
+        "sumber": "Badan Pusat Statistik (BPS)",
+        "storage_name": "perceraian_lain_lain",
+        "file_name": (
+            "jumlah_perceraian_akibat_masalah_lain_lain"
+        ),
+        "note": (
+            "Jumlah Perceraian Menurut Provinsi "
+            "Akibat Masalah Lain-Lain berdasarkan BPS"
+        ),
+        "nama_data_import": (
+            "s3://maganghub/bps/perceraian_lain_lain/final/"
+            "jumlah_perceraian_akibat_masalah_lain_lain.csv"
+        ),
+
+        # SIMDASI
+        "simdasi_id": 25,
+        "simdasi_table_id": (
+            "aWhSR0ViS3hxc1hWZlZEbExjNVpDUT09"
+        ),
+        "simdasi_variable_id": "xgvpyi5qey",
+        "simdasi_wilayah": "0000000",
+
+        # BPS terbaru yang benar-benar punya
+        # variabel Lain-lain
+        "tahun_awal": 2020,
+        "tahun_terbaru": 2023,
+    },
+
+    "rasio_jenis_kelamin": {
+        "idnamadata": 30773,
+        "indikator": "Rasio Jenis Kelamin Penduduk",
+        "default_satuan": "Persen",
+        "sumber": "Badan Pusat Statistik (BPS)",
+        "storage_name": "rasio_jenis_kelamin",
+        "file_name": "rasio_jenis_kelamin_penduduk",
+        "note": (
+            "Rasio Jenis Kelamin Penduduk menurut Kabupaten/Kota "
+            "berdasarkan BPS"
+        ),
+        "nama_data_import": (
+            "s3://maganghub/bps/rasio_jenis_kelamin/final/"
+            "rasio_jenis_kelamin_penduduk.csv"
+        ),
+
+        "api_type": "tablestatistic",
+        "tahun_terbaru": 2025,
+    },
+
+    "ipm_laki_laki": {
+        "idnamadata": 9913,
+        "indikator": (
+            "Indeks Pembangunan Manusia (IPM) "
+            "Laki-Laki Menurut Provinsi"
+        ),
+        "default_satuan": "Poin Indeks",
+        "sumber": "Badan Pusat Statistik (BPS)",
+        "storage_name": "ipm_laki_laki",
+        "file_name": (
+            "indeks_pembangunan_manusia_ipm_laki_laki_menurut_provinsi"
+        ),
+        "note": (
+            "Indeks Pembangunan Manusia (IPM) Laki-Laki "
+            "Menurut Provinsi berdasarkan BPS"
+        ),
+        "nama_data_import": (
+            "s3://maganghub/bps/ipm_laki_laki/final/"
+            "indeks_pembangunan_manusia_ipm_laki_laki_menurut_provinsi.csv"
+        ),
+        "api_type": "tablestatistic",
+        "table_id": "MjI3MSMy",
+        "tahun_terbaru": 2025,
+    },
+
+    "ipm_perempuan": {
+        "idnamadata": 9914,
+        "indikator": (
+            "Indeks Pembangunan Manusia (IPM) "
+            "Perempuan Menurut Provinsi"
+        ),
+        "default_satuan": "Poin Indeks",
+        "sumber": "Badan Pusat Statistik (BPS)",
+        "storage_name": "ipm_perempuan",
+        "file_name": (
+            "indeks_pembangunan_manusia_ipm_perempuan_menurut_provinsi"
+        ),
+        "note": (
+            "Indeks Pembangunan Manusia (IPM) Perempuan "
+            "Menurut Provinsi berdasarkan BPS"
+        ),
+        "nama_data_import": (
+            "s3://maganghub/bps/ipm_perempuan/final/"
+            "indeks_pembangunan_manusia_ipm_perempuan_menurut_provinsi.csv"
+        ),
+        "api_type": "tablestatistic",
+        "table_id": "MjI3MSMy",
+        "tahun_terbaru": 2025,
+    },
+
+    "iku": {
+        "idnamadata": 9748,
+        "indikator": "Indeks Kualitas Udara Menurut Provinsi",
+        "default_satuan": "poin",
+        "sumber": (
+            "Kementerian Lingkungan Hidup/"
+            "Badan Pengendalian Lingkungan Hidup"
+        ),
+        "storage_name": "iku",
+        "file_name": "indeks_kualitas_udara_menurut_provinsi",
+        "note": (
+            "Indeks Kualitas Udara Menurut Provinsi "
+            "berdasarkan Tabel 2.1.25 Statistik Lingkungan "
+            "Hidup Indonesia 2025. Data 2024 bersumber dari "
+            "Kementerian Lingkungan Hidup/Badan Pengendalian "
+            "Lingkungan Hidup."
+        ),
+        "nama_data_import": (
+            "s3://maganghub/bps/iku/final/"
+            "indeks_kualitas_udara_menurut_provinsi.csv"
+            " | URL: https://www.bps.go.id/"
+        ),
+        "url_sumber": "https://www.bps.go.id/id/publication/2025/11/28/5533ef5bf73b9dd7bc5475ee/statistik-lingkungan-hidup-indonesia-2025.html",
+        "tahun_awal": 2020,
+        "tahun_terbaru": 2024,
+        "api_type": "pdf",
+    },
 }
 
-def get_bps_config(indikator):
-    if indikator not in BPS_CONFIG:
-        raise ValueError(
-            f"Indikator BPS tidak ditemukan: {indikator}"
+class BaseExtractor:
+    """Interface dasar untuk seluruh metode ekstraksi BPS."""
+
+    def extract(self, *args, **kwargs):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} harus "
+            "mengimplementasikan extract()."
         )
 
-    return BPS_CONFIG[indikator]
 
-def get_storage_paths(config):
-    storage_name = config["storage_name"]
-    file_name = config["file_name"]
+class PDFExtractor(BaseExtractor):
+    """Menangani ekstraksi data dari dokumen PDF."""
 
-    raw_dir = (
-        PROJECT_ROOT
-        / "data"
-        / "raw"
-        / "bps"
-        / storage_name
+    def __init__(self, config):
+        self.config = config
+
+
+    def extract(self, pdf_path):
+        if self.config.get("storage_name") != "iku":
+            raise NotImplementedError(
+                "PDFExtractor saat ini baru mendukung IKU."
+            )
+
+        return self.extract_iku_from_pdf(pdf_path)
+
+    @staticmethod
+    def extract_iku_from_pdf(pdf_path):
+        """Ekstrak IKU 2022–2024 dari tabel 2.1.25 PDF BPS."""
+        import re
+
+        pdf_path = Path(pdf_path)
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF tidak ditemukan: {pdf_path}")
+
+        provinces = [
+            "Aceh", "Sumatera Utara", "Sumatera Barat", "Riau",
+            "Jambi", "Sumatera Selatan", "Bengkulu", "Lampung",
+            "Kepulauan Bangka Belitung", "Kepulauan Riau",
+            "DKI Jakarta", "Jawa Barat", "Jawa Tengah",
+            "DI Yogyakarta", "Jawa Timur", "Banten", "Bali",
+            "Nusa Tenggara Barat", "Nusa Tenggara Timur",
+            "Kalimantan Barat", "Kalimantan Tengah",
+            "Kalimantan Selatan", "Kalimantan Timur",
+            "Kalimantan Utara", "Sulawesi Utara", "Sulawesi Tengah",
+            "Sulawesi Selatan", "Sulawesi Tenggara", "Gorontalo",
+            "Sulawesi Barat", "Maluku", "Maluku Utara",
+            "Papua Barat", "Papua Barat Daya", "Papua",
+            "Papua Selatan", "Papua Tengah", "Papua Pegunungan",
+        ]
+
+        years = [2022, 2023, 2024]
+        province_set = set(provinces)
+        valid_regions = province_set | {"Indonesia"}
+        value_pattern = re.compile(
+            r"^(?:\d{1,3}[,.]\d{2}|[-\u2013\u2014])$"
+        )
+
+        with pymupdf.open(str(pdf_path)) as doc:
+            # Cari halaman berdasarkan judul tabel, bukan nomor halaman tetap.
+            table_pages = []
+            for page_number, page in enumerate(doc):
+                text = page.get_text("text")
+                if (
+                    "Indeks Kualitas Udara Menurut Provinsi" in text
+                    and "2020" in text
+                    and "2024" in text
+                    and "Provinsi" in text
+                    and "Indonesia" in text
+                    and "2.1.25" in text
+                    and "20221" in text
+                    and "20231" in text
+                    and "20242" in text
+                ):
+                    table_pages.append((page_number, text))
+
+        if len(table_pages) != 1:
+            raise ValueError(
+                "Tabel IKU 2020–2024 tidak ditemukan secara unik. "
+                f"Jumlah halaman kandidat: {len(table_pages)}"
+            )
+
+        _, page_text = table_pages[0]
+
+        df = PDFExtractor.parse_iku_table(page_text)
+        PDFExtractor.validate_complete_iku(df)
+        return df
+
+
+    @staticmethod
+    def parse_iku_table(page_text):
+        """Parse tabel IKU 2020–2024 dari teks halaman PDF."""
+        import re
+
+        provinces = [
+            "Aceh", "Sumatera Utara", "Sumatera Barat", "Riau",
+            "Jambi", "Sumatera Selatan", "Bengkulu", "Lampung",
+            "Kepulauan Bangka Belitung", "Kepulauan Riau",
+            "DKI Jakarta", "Jawa Barat", "Jawa Tengah",
+            "DI Yogyakarta", "Jawa Timur", "Banten", "Bali",
+            "Nusa Tenggara Barat", "Nusa Tenggara Timur",
+            "Kalimantan Barat", "Kalimantan Tengah",
+            "Kalimantan Selatan", "Kalimantan Timur",
+            "Kalimantan Utara", "Sulawesi Utara", "Sulawesi Tengah",
+            "Sulawesi Selatan", "Sulawesi Tenggara", "Gorontalo",
+            "Sulawesi Barat", "Maluku", "Maluku Utara",
+            "Papua Barat", "Papua Barat Daya", "Papua",
+            "Papua Selatan", "Papua Tengah", "Papua Pegunungan",
+        ]
+
+        valid_regions = set(provinces) | {"Indonesia"}
+        value_pattern = re.compile(r"^(?:\d{1,3}[,.]\d{2}|[-–—])$")
+
+
+        lines = [
+            line.strip()
+            for line in page_text.splitlines()
+            if line.strip()
+        ]
+
+        records = []
+
+        for i, region in enumerate(lines):
+            if region not in valid_regions:
+                continue
+
+            values = []
+            for candidate in lines[i + 1:]:
+                if candidate in valid_regions:
+                    break
+                if value_pattern.fullmatch(candidate):
+                    values.append(candidate)
+                    if len(values) == 5:
+                        break
+
+            if len(values) != 5:
+                raise ValueError(
+                    f"Nilai IKU 2020–2024 tidak lengkap untuk "
+                    f"{region}: {values}"
+                )
+
+            for year in [2022, 2023, 2024]:
+                value = values[year - 2020]
+                data_y = (
+                    float(value.replace(",", "."))
+                    if value not in {"-", "–", "—"}
+                    else float("nan")
+                )
+
+                records.append({
+                    "wilayah": region,
+                    "tahun": year,
+                    "data_y": data_y,
+                    "satuan": "Poin Indeks",
+                    "sumber": (
+                        "Kementerian Lingkungan Hidup/"
+                        "Badan Pengendalian Lingkungan Hidup"
+                    ),
+                })
+
+        return pd.DataFrame(
+            records,
+            columns=["wilayah", "tahun", "data_y", "satuan", "sumber"],
+        )
+
+
+    @staticmethod
+    def validate_complete_iku(df):
+        """Validasi kelengkapan data IKU 2022–2024."""
+        provinces = [
+            "Aceh", "Sumatera Utara", "Sumatera Barat", "Riau",
+            "Jambi", "Sumatera Selatan", "Bengkulu", "Lampung",
+            "Kepulauan Bangka Belitung", "Kepulauan Riau",
+            "DKI Jakarta", "Jawa Barat", "Jawa Tengah",
+            "DI Yogyakarta", "Jawa Timur", "Banten", "Bali",
+            "Nusa Tenggara Barat", "Nusa Tenggara Timur",
+            "Kalimantan Barat", "Kalimantan Tengah",
+            "Kalimantan Selatan", "Kalimantan Timur",
+            "Kalimantan Utara", "Sulawesi Utara", "Sulawesi Tengah",
+            "Sulawesi Selatan", "Sulawesi Tenggara", "Gorontalo",
+            "Sulawesi Barat", "Maluku", "Maluku Utara",
+            "Papua Barat", "Papua Barat Daya", "Papua",
+            "Papua Selatan", "Papua Tengah", "Papua Pegunungan",
+        ]
+
+        expected_regions = set(provinces) | {"Indonesia"}
+        expected_rows = len(expected_regions) * 3
+
+        if len(df) != expected_rows:
+            raise ValueError(
+                f"Validasi gagal: {len(df)} baris, "
+                f"seharusnya {expected_rows} baris."
+            )
+
+        if df.duplicated(["wilayah", "tahun"]).any():
+            raise ValueError(
+                "Ada kombinasi wilayah dan tahun duplikat."
+            )
+
+        actual_regions = set(df["wilayah"])
+        missing = sorted(expected_regions - actual_regions)
+        unexpected = sorted(actual_regions - expected_regions)
+
+        if missing or unexpected:
+            raise ValueError(
+                f"Validasi wilayah gagal. "
+                f"Wilayah hilang: {missing}; "
+                f"wilayah tidak dikenal: {unexpected}."
+            )
+
+        if set(df["tahun"]) != {2022, 2023, 2024}:
+            raise ValueError(
+                "Tahun harus mencakup 2022, 2023, dan 2024."
+            )
+
+
+class ExtractorFactory:
+    """Memilih extractor berdasarkan metode ekstraksi."""
+
+    _extractors = {}
+
+    @classmethod
+    def register(cls, api_type, extractor_class):
+        cls._extractors[api_type] = extractor_class
+
+    @classmethod
+    def create(cls, config):
+        api_type = config.get("api_type")
+        extractor_class = cls._extractors.get(api_type)
+
+        if extractor_class is None:
+            raise ValueError(
+                f"Extractor belum terdaftar untuk api_type: {api_type}"
+            )
+
+        return extractor_class(config)
+
+ExtractorFactory.register("pdf", PDFExtractor)
+
+class IndicatorRegistry:
+    """Menyimpan konfigurasi indikator BPS."""
+
+    def __init__(self):
+        self._indicators = {}
+
+    def register_indicator(self, name, config):
+        if name in self._indicators:
+            raise ValueError(
+                f"Indikator '{name}' sudah terdaftar."
+            )
+
+        self._indicators[name] = config
+
+    def get_indicator(self, name):
+        if name not in self._indicators:
+            raise KeyError(
+                f"Indikator '{name}' belum terdaftar."
+            )
+
+        return self._indicators[name]
+
+    def get_indicator_by_id(self, idnamadata):
+        for name, config in self._indicators.items():
+            if config.get("idnamadata") == idnamadata:
+                return config
+
+        raise KeyError(
+            f"Indikator dengan idnamadata "
+            f"'{idnamadata}' belum terdaftar."
+        )
+
+
+BPS_REGISTRY = IndicatorRegistry()
+BPS_REGISTRY.register_indicator("iku", BPS_CONFIG["iku"])
+
+
+class BPSPipeline:
+    """Mengatur alur ekstraksi data BPS."""
+
+    def __init__(self, registry):
+        self.registry = registry
+
+    def run_iku(self, pdf_path):
+        config = self.registry.get_indicator("iku")
+        extractor = ExtractorFactory.create(config)
+        return extractor.extract(pdf_path)
+
+    def run_by_id(self, idnamadata, source=None):
+        config = self.registry.get_indicator_by_id(idnamadata)
+        extractor = ExtractorFactory.create(config)
+        return extractor.extract(source)
+
+
+    def save_output(self, config, df, filename=None):
+        """Simpan hasil ekstraksi IKU sebagai Parquet per tahun."""
+
+        if config.get("storage_name") != "iku":
+            raise NotImplementedError(
+                "Penyimpanan Parquet pipeline ini "
+                "sementara hanya untuk IKU."
+            )
+
+        raw_dir = (
+            PROJECT_ROOT
+            / "data"
+            / "raw"
+            / "bps"
+            / "iku"
+        )
+        raw_dir.mkdir(parents=True, exist_ok=True)
+
+        saved_files = []
+
+        for tahun, df_tahun in df.groupby("tahun"):
+            raw_file = raw_dir / f"iku_{int(tahun)}.parquet"
+
+            df_tahun.to_parquet(
+                raw_file,
+                index=False,
+            )
+
+            print("RAW PARQUET:", raw_file)
+            print("Jumlah baris:", len(df_tahun))
+
+            saved_files.append(raw_file)
+
+        return saved_files
+
+
+
+    def save_final_output(self, config, df, filename):
+        """Simpan CSV final IKU sesuai skema impor XFlask."""
+
+        if config.get("storage_name") != "iku":
+            raise NotImplementedError(
+                "Penyimpanan final pipeline ini "
+                "sementara hanya untuk IKU."
+            )
+
+        df_final = df.copy()
+
+        def normalize_region(value):
+            if pd.isna(value):
+                return ""
+
+            value = str(value).strip().lower()
+
+            aliases = {
+                "kep. bangka belitung":
+                    "kepulauan bangka belitung",
+                "kep. riau": "kepulauan riau",
+                "d.i. yogyakarta": "di yogyakarta",
+            }
+
+            return aliases.get(value, value)
+
+        # Metadata indikator dan nama wilayah
+        df_final["idnamadata"] = config["idnamadata"]
+        df_final["nama_indikator"] = config["indikator"]
+        df_final["nama_match"] = df_final["wilayah"].map(
+            normalize_region
+        )
+
+        # Ambil data referensi XFlask
+        db = get_xflask_api_data(config["idnamadata"]).copy()
+
+        db["nama_match"] = (
+            db["provinsi"]
+            .fillna(db["nama_alias"])
+            .map(normalize_region)
+        )
+
+        db["tahun_match"] = pd.to_datetime(
+            db["data_x"],
+            dayfirst=True,
+            errors="coerce",
+        ).dt.year
+
+        # Mapping kode wilayah dari data provinsi yang sudah ada
+        db_prov = db[
+            db["leveldata"].astype(str).str.lower().eq("provinsi")
+            & (
+                pd.to_numeric(
+                    db["id_provinsi"], errors="coerce"
+                ) != 0
+            )
+        ].copy()
+
+        mapping = (
+            db_prov[["nama_match", "kode_bps"]]
+            .dropna(subset=["kode_bps"])
+            .drop_duplicates(subset=["nama_match"])
+        )
+
+        df_final = df_final.merge(
+            mapping,
+            on="nama_match",
+            how="left",
+            validate="many_to_one",
+        )
+
+        # Indonesia merupakan observasi nasional
+        is_indonesia = df_final["nama_match"].eq("indonesia")
+
+        missing_codes = df_final.loc[
+            ~is_indonesia & df_final["kode_bps"].isna(),
+            "wilayah",
+        ].drop_duplicates().tolist()
+
+        if missing_codes:
+            raise ValueError(
+                "Kode BPS belum ditemukan untuk wilayah: "
+                + ", ".join(missing_codes)
+                + ". CSV final tidak dibuat."
+            )
+
+        def format_kode_wilayah(value):
+            if pd.isna(value) or str(value).strip() == "":
+                return ""
+
+            try:
+                number = float(value)
+                if number.is_integer():
+                    return str(int(number))
+            except (ValueError, TypeError):
+                pass
+
+            return str(value).strip()
+
+        df_final["kode_wilayah"] = (
+            df_final["kode_bps"].map(format_kode_wilayah)
+        )
+        df_final.loc[is_indonesia, "kode_wilayah"] = "0000000"
+        df_final["provinsi"] = df_final["wilayah"]
+
+        # Periode tahunan
+        df_final["data_x"] = pd.to_datetime(
+            df_final["tahun"].astype(str) + "-01-01",
+            errors="raise",
+        ).dt.strftime("%d-%m-%Y")
+
+        # Cocokkan wilayah dan tahun dengan data existing XFlask
+        existing_keys = set(
+            zip(db["nama_match"], db["tahun_match"])
+        )
+
+        df_final["status_match"] = "PROVINSI BARU"
+
+        df_final.loc[
+            [
+                (row["nama_match"], int(row["tahun"]))
+                in existing_keys
+                for _, row in df_final.iterrows()
+            ],
+            "status_match",
+        ] = "UPDATE EXISTING"
+
+        # Nilai kosong tidak boleh diproses sebagai pembaruan
+        df_final.loc[
+            df_final["data_y"].isna(),
+            "status_match",
+        ] = "SKIP NILAI KOSONG"
+
+        # Observasi nasional diberi status NASIONAL
+        df_final.loc[
+            is_indonesia,
+            "status_match",
+        ] = "NASIONAL"
+
+
+        # Metadata
+        df_final["satuan"] = config["default_satuan"]
+        df_final["sumber"] = config["sumber"]
+        df_final["note"] = config["note"]
+
+        import_path = config["nama_data_import"].strip()
+        source_url = config.get("url_sumber", "").strip()
+
+        # Hindari URL sumber ganda jika sudah ada dalam konfigurasi
+        if source_url:
+            import_path = import_path.split(" | URL: ")[0].strip()
+            import_path = f"{import_path} | URL: {source_url}"
+
+        df_final["nama_data_import"] = import_path
+
+        # Skema final XFlask
+        final_columns = [
+            "idnamadata",
+            "nama_indikator",
+            "kode_wilayah",
+            "provinsi",
+            "data_x",
+            "data_y",
+            "satuan",
+            "sumber",
+            "note",
+            "nama_data_import",
+            "status_match",
+        ]
+
+        df_final = df_final[final_columns].copy()
+
+        output_dir = (
+            PROJECT_ROOT
+            / "data"
+            / "final"
+            / "bps"
+            / "iku"
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_file = output_dir / filename
+
+        df_final.to_csv(
+            output_file,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        print("FINAL CSV:", output_file)
+        print("Jumlah baris final:", len(df_final))
+        print("Kolom final:", list(df_final.columns))
+        print("\nStatus match:")
+        print(df_final["status_match"].value_counts(dropna=False))
+
+        return output_file
+
+
+    def upload_iku_to_minio(self, config, raw_files, final_file):
+        """Upload Parquet hasil ekstraksi dan CSV final IKU ke MinIO."""
+        if config.get("storage_name") != "iku":
+            raise NotImplementedError(
+                "Upload MinIO pipeline ini sementara hanya untuk IKU."
+            )
+
+        client = get_minio_client()
+        uploaded_objects = []
+
+        # Upload Parquet per tahun
+        for raw_file in raw_files:
+            object_name = f"bps/iku/raw/{raw_file.name}"
+
+            with open(raw_file, "rb") as file:
+                upload_bytes(
+                    client,
+                    MINIO_BUCKET,
+                    file.read(),
+                    object_name,
+                    "application/octet-stream",
+                )
+
+            uploaded_objects.append(object_name)
+            print(f"RAW MINIO: {MINIO_BUCKET}/{object_name}")
+
+        # Upload CSV final
+        final_object_name = (
+            "bps/iku/final/"
+            "indeks_kualitas_udara_menurut_provinsi.csv"
+        )
+
+        with open(final_file, "rb") as file:
+            upload_bytes(
+                client,
+                MINIO_BUCKET,
+                file.read(),
+                final_object_name,
+                "text/csv",
+            )
+
+        uploaded_objects.append(final_object_name)
+        print(f"FINAL MINIO: {MINIO_BUCKET}/{final_object_name}")
+
+        return uploaded_objects
+
+
+    def run_indicator(self, idnamadata, source=None, **options):
+        config = self.registry.get_indicator_by_id(idnamadata)
+        extractor = ExtractorFactory.create(config)
+
+        if config.get("api_type") == "pdf":
+            df = extractor.extract(source)
+        else:
+            df = extractor.extract(**options)
+
+        filename = config.get("output_filename")
+        if not filename:
+            filename = config["file_name"]
+            if not filename.lower().endswith(".csv"):
+                filename += ".csv"
+
+        if config.get("storage_name") == "iku":
+            raw_files = self.save_output(
+                config=config,
+                df=df,
+            )
+
+            final_file = self.save_final_output(
+                config=config,
+                df=df,
+                filename=filename,
+            )
+
+            self.upload_iku_to_minio(
+                config=config,
+                raw_files=raw_files,
+                final_file=final_file,
+            )
+        else:
+            output_dir = (
+                PROJECT_ROOT
+                / "data"
+                / "raw"
+                / "bps"
+                / config["storage_name"]
+            )
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            output_file = output_dir / filename
+
+            df.to_csv(
+                output_file,
+                index=False,
+                encoding="utf-8-sig",
+            )
+
+            print("File:", output_file)
+
+        return df
+
+def update_idnamadata_iku(pdf_path):
+    pipeline = BPSPipeline(BPS_REGISTRY)
+
+    df = pipeline.run_indicator(
+        idnamadata=9748,
+        source=pdf_path,
     )
 
-    final_dir = (
-        PROJECT_ROOT
-        / "data"
-        / "final"
-        / "bps"
-        / storage_name
-    )
+    print("IKU 2024 berhasil diekstrak.")
+    print("Jumlah provinsi:", len(df))
 
-    raw_file = (
-        raw_dir
-        / f"{file_name}_raw.parquet"
-    )
+    return df
 
-    final_file = (
-        final_dir
-        / f"{file_name}.csv"
-    )
 
-    return {
-        "raw_dir": raw_dir,
-        "raw_file": raw_file,
-        "final_dir": final_dir,
-        "final_file": final_file,
-    }
+class JSONAPIExtractor(BaseExtractor):
+    """Menangani ekstraksi data melalui API JSON BPS."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def extract(
+        self,
+        tahun_awal=None,
+        tahun_akhir=None,
+        save_raw=True,
+        raw_file=None,
+    ):
+        configs = self.config.get("configs")
+
+        if not configs:
+            raise ValueError(
+                "Konfigurasi API tidak memiliki 'configs': "
+                f"{self.config.get('indikator', 'tidak diketahui')}"
+            )
+
+        return scrape_all(
+            configs=configs,
+            indikator=self.config["indikator"],
+            save_raw=save_raw,
+            tahun_awal=tahun_awal or self.config.get("tahun_awal"),
+            tahun_akhir=tahun_akhir or self.config.get("tahun_terbaru"),
+            raw_file=raw_file,
+        )
+
+ExtractorFactory.register("api", JSONAPIExtractor)
+
+# ============================================================
+# KONFIGURASI BPS 30773 - RASIO JENIS KELAMIN
+# ============================================================
+
+RASIO_JENIS_KELAMIN_PROVINCES = {
+    "Aceh": "1100",
+    "Sumatera Utara": "1200",
+    "Sumatera Barat": "1300",
+    "Riau": "1400",
+    "Jambi": "1500",
+    "Sumatera Selatan": "1600",
+    "Bengkulu": "1700",
+    "Lampung": "1800",
+    "Kepulauan Bangka Belitung": "1900",
+    "Kepulauan Riau": "2100",
+    "DKI Jakarta": "3100",
+    "Jawa Barat": "3200",
+    "Jawa Tengah": "3300",
+    "DI Yogyakarta": "3400",
+    "Jawa Timur": "3500",
+    "Banten": "3600",
+    "Bali": "5100",
+    "Nusa Tenggara Barat": "5200",
+    "Nusa Tenggara Timur": "5300",
+    "Kalimantan Barat": "6100",
+    "Kalimantan Tengah": "6200",
+    "Kalimantan Selatan": "6300",
+    "Kalimantan Timur": "6400",
+    "Kalimantan Utara": "6500",
+    "Sulawesi Utara": "7100",
+    "Sulawesi Tengah": "7200",
+    "Sulawesi Selatan": "7300",
+    "Sulawesi Tenggara": "7400",
+    "Gorontalo": "7500",
+    "Sulawesi Barat": "7600",
+    "Maluku": "8100",
+    "Maluku Utara": "8200",
+    "Papua Barat": "9100",
+    "Papua": "9400",
+}
 
 class BPSScraper:
 
@@ -490,6 +1280,7 @@ class BPSScraper:
         domain_id,
         var_id,
         provinsi,
+        session=None,
     ):
 
         self.domain_id = str(
@@ -503,7 +1294,9 @@ class BPSScraper:
         self.provinsi = provinsi
 
         self.session = (
-            create_session()
+            session
+            if session is not None
+            else create_session()
         )
 
 
@@ -771,6 +1564,7 @@ class BPSScraper:
         indikator=None,
         turvar_id=None,
         turvar_label=None,
+        available_years=None,
     ):
 
 
@@ -791,7 +1585,9 @@ class BPSScraper:
 
 
         years = (
-            self.get_available_years()
+            available_years
+            if available_years is not None
+            else self.get_available_years()
         )
 
         # Jika batas tahun diberikan, batasi data yang diambil.
@@ -882,39 +1678,42 @@ def scrape_all(
     tahun_awal=None,
     tahun_akhir=None,
     raw_file=None,
+    session=None,
+    metadata_cache=None,
 ):
 
     all_data = []
 
+    if session is None:
+        session = create_session()
 
     for config in configs:
-
-        print(
-            "\n--------------------------------"
-        )
-
-        print(
-            config["provinsi"]
-        )
-
-        print(
-            "--------------------------------"
-        )
-
-
         scraper = BPSScraper(
             domain_id=config["domain_id"],
             var_id=config["var_id"],
             provinsi=config["provinsi"],
+            session=session,
         )
 
 
         try:
 
+            key = (
+                str(config["domain_id"]),
+                int(config["var_id"]),
+            )
+
+            available_years = (
+                metadata_cache.get(key)
+                if metadata_cache is not None
+                else None
+            )
+
             df = scraper.run(
                 tahun_awal=tahun_awal,
                 tahun_akhir=tahun_akhir,
                 indikator=indikator,
+                available_years=available_years,
                 turvar_id=config.get(
                     "turvar_id"
                 ),
@@ -972,12 +1771,54 @@ def scrape_all(
         ignore_index=True,
     )
 
-    if save_raw and raw_file is not None:
 
+    if save_raw and raw_file is not None:
+        # Pastikan folder RAW tersedia
+        raw_file.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        # Simpan RAW gabungan sebagai file utama
         save_parquet(
             df_raw,
             raw_file,
         )
+
+        print(
+            "RAW GABUNGAN:",
+            len(df_raw),
+            "row ->",
+            raw_file,
+        )
+
+        # Simpan RAW per tahun sebagai arsip
+        tahun_raw = pd.to_datetime(
+            df_raw["data_x"],
+            errors="coerce",
+        ).dt.year
+
+        for tahun in sorted(tahun_raw.dropna().unique()):
+            df_raw_tahun = df_raw[
+                tahun_raw == tahun
+            ].copy()
+
+            raw_file_tahun = (
+                raw_file.parent
+                / f"{raw_file.stem}_{int(tahun)}.parquet"
+            )
+
+            save_parquet(
+                df_raw_tahun,
+                raw_file_tahun,
+            )
+
+            print(
+                f"RAW {int(tahun)}:",
+                len(df_raw_tahun),
+                "row ->",
+                raw_file_tahun,
+            )
 
     print(
         "JUMLAH ROW:",
@@ -986,8 +1827,2012 @@ def scrape_all(
 
     return df_raw
 
+def get_tablestatistic_candidates_generic(
+    domain_id,
+    keyword,
+):
+    url = (
+        f"{BPS_BASE_URL}/list/model/tablestatistic/"
+        f"lang/ind/domain/{domain_id}/key/{BPS_API_KEY}"
+    )
 
-def get_existing_xflask_data(id_nama_data):
+    params = {
+        "keyword": keyword,
+        "page": 1,
+        "perpage": 50,
+    }
+
+    result = get_json(
+        session=BPS_API_SESSION,
+        url=url,
+        params=params,
+        timeout=60,
+    )
+
+    data = result.get(
+        "data",
+        [],
+    )
+
+    if (
+        isinstance(data, list)
+        and len(data) > 1
+    ):
+        tables = data[1]
+    else:
+        tables = data
+
+    if isinstance(
+        tables,
+        dict,
+    ):
+        tables = (
+            tables.get("table")
+            or tables.get("tables")
+            or tables.get("data")
+            or []
+        )
+
+    if not isinstance(
+        tables,
+        list,
+    ):
+        return []
+
+    candidates = []
+
+    for table in tables:
+
+        if not isinstance(
+            table,
+            dict,
+        ):
+            continue
+
+        title = str(
+            table.get("judul_tabel")
+            or table.get("title")
+            or table.get("judul")
+            or ""
+        )
+
+        table_id = (
+            table.get("id")
+            or table.get("table_id")
+            or table.get("id_tabel")
+        )
+
+        if not table_id:
+            continue
+
+        candidates.append(
+            {
+                "id": table_id,
+                "title": title,
+                "raw": table,
+            }
+        )
+
+    return candidates
+
+def get_ipm_laki_laki_table():
+    candidates = get_tablestatistic_candidates(
+        domain_id="0000",
+        keyword="indeks pembangunan manusia",
+    )
+
+    if not candidates:
+        raise RuntimeError(
+            "Tidak ditemukan kandidat tabel "
+            "IPM menurut Jenis Kelamin."
+        )
+
+    for item in candidates:
+        title = str(
+            item.get("title", "")
+        ).lower()
+
+        if (
+            "pembangunan manusia" in title
+            and "jenis kelamin" in title
+        ):
+            return item
+
+    raise RuntimeError(
+        "Kandidat tabel IPM menurut Jenis Kelamin "
+        "tidak ditemukan."
+    )
+
+# ============================================================
+# BPS TABELESTATISTIC - 30773 RASIO JENIS KELAMIN
+# ============================================================
+
+def get_tablestatistic_candidates(
+    domain_id,
+    keyword="rasio jenis kelamin",
+):
+    """
+    Mencari kandidat tabel Tablestatistic BPS berdasarkan keyword.
+    """
+    url = (
+        f"{BPS_BASE_URL}/list/model/tablestatistic/"
+        f"lang/ind/domain/{domain_id}/key/{BPS_API_KEY}"
+    )
+
+    params = {
+        "keyword": keyword,
+        "page": 1,
+        "perpage": 50,
+    }
+
+    response = requests.get(
+        url,
+        params=params,
+        timeout=60,
+    )
+
+    response.raise_for_status()
+
+    result = response.json()
+
+    data = result.get("data", [])
+
+    if isinstance(data, list) and len(data) > 1:
+        tables = data[1]
+    else:
+        tables = data
+
+    if isinstance(tables, dict):
+        tables = (
+            tables.get("table")
+            or tables.get("tables")
+            or tables.get("data")
+            or []
+        )
+
+    if not isinstance(tables, list):
+        return []
+
+    candidates = []
+
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+
+        title = str(
+            table.get("judul_tabel")
+            or table.get("title")
+            or table.get("judul")
+            or ""
+        )
+
+        if "rasio jenis kelamin" not in title.lower():
+            continue
+
+        table_id = (
+            table.get("id")
+            or table.get("table_id")
+            or table.get("id_tabel")
+        )
+
+        if not table_id:
+            continue
+
+        candidates.append(
+            {
+                "id": table_id,
+                "title": title,
+                "raw": table,
+            }
+        )
+
+    return candidates
+
+
+def get_tablestatistic_view(
+    domain_id,
+    table_id,
+    tahun,
+):
+    """
+    Mengambil data tabel Tablenstatistic BPS pada tahun tertentu.
+    """
+    url = f"{BPS_BASE_URL}/view"
+
+    params = {
+        "model": "tablestatistic",
+        "lang": "ind",
+        "domain": domain_id,
+        "id": table_id,
+        "year": str(tahun),
+        "key": BPS_API_KEY,
+    }
+
+    return get_json(
+        session=BPS_API_SESSION,
+        url=url,
+        params=params,
+        timeout=60,
+    )
+
+def scrape_ipm_laki_laki(
+    tahun=2025,
+    config=None,
+):
+    """
+    Scrape BPS ID 9913:
+    Indeks Pembangunan Manusia (IPM)
+    Laki-Laki Menurut Provinsi.
+
+    Mengambil 3 periode:
+    tahun - 2, tahun - 1, tahun.
+
+    Contoh:
+    tahun=2025
+    -> 2023, 2024, 2025
+    """
+
+    if config is None:
+        config = BPS_CONFIG[
+            "ipm_laki_laki"
+        ]
+
+    table_id = config[
+        "table_id"
+    ]
+
+    tahun_mulai = tahun - 2
+    tahun_selesai = tahun
+
+    rows = []
+
+    for tahun_data in range(
+        tahun_mulai,
+        tahun_selesai + 1,
+    ):
+
+        print(
+            f"\n[9913] Mengambil tahun "
+            f"{tahun_data}..."
+        )
+
+        # ==============================
+        # GET DYNAMIC TABLE
+        # ==============================
+
+        result = get_tablestatistic_view(
+            domain_id="0000",
+            table_id=table_id,
+            tahun=tahun_data,
+        )
+
+        if not isinstance(
+            result,
+            dict,
+        ):
+            raise RuntimeError(
+                "Response API 9913 bukan "
+                "JSON object."
+            )
+
+        datacontent = result.get(
+            "datacontent",
+            {},
+        )
+
+        if not isinstance(
+            datacontent,
+            dict,
+        ) or not datacontent:
+
+            raise RuntimeError(
+                "Response API 9913 tidak memiliki "
+                "datacontent."
+            )
+
+        var = result.get(
+            "var",
+            [],
+        )
+
+        if not var:
+            raise RuntimeError(
+                "Metadata var 9913 tidak ditemukan."
+            )
+
+        # Ambil var_id dari response BPS
+        var_id = int(
+            var[0]["val"]
+        )
+
+        # ==============================
+        # PAKAI PARSER BPS EXISTING
+        # ==============================
+
+        parser = BPSScraper(
+            domain_id="0000",
+            var_id=var_id,
+            provinsi="Indonesia",
+        )
+
+        df_year = parser.parse_data(
+            result,
+            tahun_data,
+            indikator=config[
+                "indikator"
+            ],
+        )
+
+        df_year["data_x"] = (
+            f"{tahun_data}-01-01"
+        )
+
+        if df_year.empty:
+            raise RuntimeError(
+                f"Data 9913 kosong untuk "
+                f"tahun {tahun_data}."
+            )
+
+        # ==============================
+        # AMBIL LAKI-LAKI SAJA
+        # ==============================
+
+        df_year["turvar"] = (
+            df_year["turvar"]
+            .astype("string")
+        )
+
+        df_year = df_year[
+            df_year["turvar"]
+            .str.contains(
+                "laki",
+                case=False,
+                na=False,
+            )
+        ].copy()
+
+        if df_year.empty:
+            raise RuntimeError(
+                f"Data Laki-Laki tidak ditemukan "
+                f"untuk tahun {tahun_data}."
+            )
+
+        # ==============================
+        # AMBIL LEVEL PROVINSI SAJA
+        # ==============================
+
+        kode = (
+            df_year[
+                "kode_wilayah"
+            ]
+            .astype("string")
+            .str.strip()
+        )
+
+        df_year = df_year[
+            kode.str.fullmatch(
+                r"\d{4}",
+                na=False,
+            )
+            & kode.str.endswith(
+                "00",
+                na=False,
+            )
+            & (kode != "0000")
+        ].copy()
+
+        if df_year.empty:
+            raise RuntimeError(
+                f"Tidak ada data provinsi "
+                f"untuk tahun {tahun_data}."
+            )
+
+        # ==============================
+        # NORMALISASI HASIL
+        # ==============================
+
+        df_year["provinsi"] = (
+            df_year["wilayah"]
+            .astype("string")
+            .str.replace(
+                r"<[^>]+>",
+                "",
+                regex=True,
+            )
+            .str.strip()
+        )
+
+        df_year["satuan"] = (
+            config[
+                "default_satuan"
+            ]
+        )
+
+        df_year["turvar"] = (
+            "Laki-laki"
+        )
+
+        rows.append(
+            df_year[
+                [
+                    "kode_wilayah",
+                    "wilayah",
+                    "provinsi",
+                    "data_x",
+                    "data_y",
+                    "satuan",
+                    "turvar",
+                ]
+            ].copy()
+        )
+
+        print(
+            f"  OK: {len(df_year)} provinsi"
+        )
+
+    if not rows:
+        raise RuntimeError(
+            "Tidak ada data IPM Laki-Laki "
+            "yang berhasil diambil."
+        )
+
+    df = pd.concat(
+        rows,
+        ignore_index=True,
+    )
+
+    # Hindari duplikasi
+    df = df.drop_duplicates(
+        subset=[
+            "kode_wilayah",
+            "data_x",
+        ],
+        keep="first",
+    )
+
+    print(
+        "\n" + "=" * 70
+    )
+    print(
+        "HASIL SCRAPING 9913 - "
+        "IPM LAKI-LAKI"
+    )
+    print(
+        "=" * 70
+    )
+
+    print(
+        f"Periode data : "
+        f"{tahun_mulai}-{tahun_selesai}"
+    )
+
+    print(
+        f"Total baris : {len(df)}"
+    )
+
+    print(
+        "\nPer tahun:"
+    )
+
+    print(
+        df.groupby(
+            "data_x"
+        ).size()
+    )
+
+    return df
+
+def scrape_ipm_perempuan(
+    tahun=2025,
+    config=None,
+):
+    """
+    Scrape BPS ID 9914:
+    Indeks Pembangunan Manusia (IPM)
+    Perempuan Menurut Provinsi.
+
+    Mengambil 3 periode:
+    tahun - 2, tahun - 1, tahun.
+
+    Contoh:
+    tahun=2025
+    -> 2023, 2024, 2025
+    """
+
+    if config is None:
+        config = BPS_CONFIG[
+            "ipm_perempuan"
+        ]
+
+    table_id = config[
+        "table_id"
+    ]
+
+    tahun_mulai = tahun - 2
+    tahun_selesai = tahun
+
+    rows = []
+
+    for tahun_data in range(
+        tahun_mulai,
+        tahun_selesai + 1,
+    ):
+
+        print(
+            f"\n[9914] Mengambil tahun "
+            f"{tahun_data}..."
+        )
+
+        result = get_tablestatistic_view(
+            domain_id="0000",
+            table_id=table_id,
+            tahun=tahun_data,
+        )
+
+        if not isinstance(
+            result,
+            dict,
+        ):
+            raise RuntimeError(
+                "Response API 9914 bukan "
+                "JSON object."
+            )
+
+        datacontent = result.get(
+            "datacontent",
+            {},
+        )
+
+        if not isinstance(
+            datacontent,
+            dict,
+        ) or not datacontent:
+            raise RuntimeError(
+                "Response API 9914 tidak memiliki "
+                "datacontent."
+            )
+
+        var = result.get(
+            "var",
+            [],
+        )
+
+        if not var:
+            raise RuntimeError(
+                "Metadata var 9914 tidak ditemukan."
+            )
+
+        var_id = int(
+            var[0]["val"]
+        )
+
+        parser = BPSScraper(
+            domain_id="0000",
+            var_id=var_id,
+            provinsi="Indonesia",
+        )
+
+        df_year = parser.parse_data(
+            result,
+            tahun_data,
+            indikator=config[
+                "indikator"
+            ],
+        )
+
+        # Pastikan tahun benar
+        df_year["data_x"] = (
+            f"{tahun_data}-01-01"
+        )
+
+        # Bersihkan HTML dari nama wilayah
+        df_year["wilayah"] = (
+            df_year["wilayah"]
+            .astype("string")
+            .str.replace(
+                r"<[^>]+>",
+                "",
+                regex=True,
+            )
+            .str.strip()
+        )
+
+        # Ambil Perempuan saja
+        df_year["turvar"] = (
+            df_year["turvar"]
+            .astype("string")
+        )
+
+        df_year = df_year[
+            df_year["turvar"]
+            .str.contains(
+                "perempuan",
+                case=False,
+                na=False,
+            )
+        ].copy()
+
+        if df_year.empty:
+            raise RuntimeError(
+                f"Data Perempuan tidak ditemukan "
+                f"untuk tahun {tahun_data}."
+            )
+
+        # Ambil provinsi saja
+        kode = (
+            df_year[
+                "kode_wilayah"
+            ]
+            .astype("string")
+            .str.strip()
+        )
+
+        df_year = df_year[
+            kode.str.fullmatch(
+                r"\d{4}",
+                na=False,
+            )
+            & kode.str.endswith(
+                "00",
+                na=False,
+            )
+            & (kode != "0000")
+        ].copy()
+
+        if df_year.empty:
+            raise RuntimeError(
+                f"Tidak ada data provinsi "
+                f"untuk tahun {tahun_data}."
+            )
+
+        df_year["provinsi"] = (
+            df_year["wilayah"]
+            .astype("string")
+            .str.strip()
+        )
+
+        df_year["satuan"] = (
+            config[
+                "default_satuan"
+            ]
+        )
+
+        df_year["turvar"] = (
+            "Perempuan"
+        )
+
+        rows.append(
+            df_year[
+                [
+                    "kode_wilayah",
+                    "wilayah",
+                    "provinsi",
+                    "data_x",
+                    "data_y",
+                    "satuan",
+                    "turvar",
+                ]
+            ].copy()
+        )
+
+        print(
+            f"  OK: {len(df_year)} provinsi"
+        )
+
+    if not rows:
+        raise RuntimeError(
+            "Tidak ada data IPM Perempuan "
+            "yang berhasil diambil."
+        )
+
+    df = pd.concat(
+        rows,
+        ignore_index=True,
+    )
+
+    df = df.drop_duplicates(
+        subset=[
+            "kode_wilayah",
+            "data_x",
+        ],
+        keep="first",
+    )
+
+    print(
+        "\n" + "=" * 70
+    )
+    print(
+        "HASIL SCRAPING 9914 - "
+        "IPM PEREMPUAN"
+    )
+    print(
+        "=" * 70
+    )
+
+    print(
+        f"Periode data : "
+        f"{tahun_mulai}-{tahun_selesai}"
+    )
+
+    print(
+        f"Total baris : {len(df)}"
+    )
+
+    print(
+        "\nPer tahun:"
+    )
+
+    print(
+        df.groupby(
+            "data_x"
+        ).size()
+    )
+
+    return df
+
+def match_ipm_laki_laki_bps_xflask(
+    df_bps,
+    df_xflask,
+):
+    print("\n" + "=" * 70)
+    print(
+        "MATCH IPM LAKI-LAKI BPS VS XFLASK"
+    )
+    print("=" * 70)
+
+    bps = df_bps.copy()
+    db = df_xflask.copy()
+
+    required_bps = [
+        "provinsi",
+        "data_x",
+        "data_y",
+    ]
+
+    required_db = [
+        "provinsi",
+        "date",
+        "data_y",
+    ]
+
+    for column in required_bps:
+        if column not in bps.columns:
+            raise RuntimeError(
+                f"Kolom BPS tidak ditemukan: {column}"
+            )
+
+    for column in required_db:
+        if column not in db.columns:
+            raise RuntimeError(
+                f"Kolom XFlask tidak ditemukan: {column}"
+            )
+
+    bps["data_x"] = pd.to_datetime(
+        bps["data_x"],
+        errors="coerce",
+    )
+
+    db["date"] = pd.to_datetime(
+        db["date"],
+        errors="coerce",
+    )
+
+    bps["tahun_match"] = (
+        bps["data_x"].dt.year
+    )
+
+    db["tahun_match"] = (
+        db["date"].dt.year
+    )
+
+    bps["nama_match"] = (
+        bps["provinsi"]
+        .apply(normalize_province_name)
+    )
+
+    db["nama_match"] = (
+        db["provinsi"]
+        .apply(normalize_province_name)
+    )
+
+    mapping = db[
+        [
+            "nama_match",
+            "tahun_match",
+            "provinsi",
+            "data_y",
+        ]
+    ].drop_duplicates(
+        subset=[
+            "nama_match",
+            "tahun_match",
+        ]
+    )
+
+    result = bps.merge(
+        mapping,
+        on=[
+            "nama_match",
+            "tahun_match",
+        ],
+        how="left",
+        suffixes=(
+            "_bps",
+            "_xflask",
+        ),
+    )
+
+    result["status_match"] = "PROVINSI BARU"
+
+    has_xflask = (
+        result["data_y_xflask"]
+        .notna()
+    )
+
+    same_value = (
+        result["data_y_bps"]
+        .sub(
+            result["data_y_xflask"]
+        )
+        .abs()
+        <= 0.01
+    )
+
+    result.loc[
+        has_xflask & same_value,
+        "status_match",
+    ] = "MATCH"
+
+    result.loc[
+        has_xflask & ~same_value,
+        "status_match",
+    ] = "MISMATCH"
+
+    print(
+        "MATCH       :",
+        (
+            result["status_match"]
+            == "MATCH"
+        ).sum(),
+    )
+
+    print(
+        "MISMATCH    :",
+        (
+            result["status_match"]
+            == "MISMATCH"
+        ).sum(),
+    )
+
+    print(
+        "PROVINSI BARU:",
+        (
+            result["status_match"]
+            == "PROVINSI BARU"
+        ).sum(),
+    )
+
+    mismatch = result[
+        result["status_match"]
+        == "MISMATCH"
+    ]
+
+    if not mismatch.empty:
+
+        print(
+            "\nDETAIL MISMATCH:"
+        )
+
+        print(
+            mismatch[
+                [
+                    "provinsi_bps",
+                    "tahun_match",
+                    "data_y_bps",
+                    "data_y_xflask",
+                ]
+            ].to_string(
+                index=False
+            )
+        )
+
+    return result
+
+def scrape_rasio_jenis_kelamin(
+    tahun=2025,
+    config=None,
+):
+    """
+    Scrape BPS ID 30773:
+    Rasio Jenis Kelamin Penduduk.
+
+    Menggunakan API Tablestatistic BPS.
+
+    Mengambil 3 periode tahun:
+    tahun - 2, tahun - 1, tahun.
+
+    Contoh:
+    tahun=2025
+    -> 2023, 2024, 2025
+    """
+
+    if config is None:
+        config = BPS_CONFIG["rasio_jenis_kelamin"]
+
+    ratio_variable_id = "ztxhjlhyqd"
+
+    rows = []
+    failed = []
+
+    # Ambil 2 tahun sebelumnya + tahun terbaru
+    tahun_mulai = tahun - 2
+    tahun_selesai = tahun
+
+    for provinsi, domain_id in RASIO_JENIS_KELAMIN_PROVINCES.items():
+
+        print(
+            f"\n[30773] {provinsi} "
+            f"(domain={domain_id})"
+        )
+
+        try:
+            candidates = get_tablestatistic_candidates(
+                domain_id=domain_id,
+                keyword="rasio jenis kelamin",
+            )
+
+            if not candidates:
+                raise RuntimeError(
+                    "Tidak ditemukan kandidat tabel "
+                    "Rasio Jenis Kelamin"
+                )
+
+            # Pilih tabel dengan ID format tablestatistic terbaru
+            table = next(
+                (
+                    item
+                    for item in candidates
+                    if str(item["id"]).startswith("V1ZS")
+                ),
+                None,
+            )
+
+            if table is None:
+                raise RuntimeError(
+                    "Tidak ditemukan tabel tablestatistic "
+                    "format terbaru untuk Rasio Jenis Kelamin"
+                )
+
+            table_id = table["id"]
+
+            print(
+                f"  TABLE ID : {table_id}"
+            )
+            # ==================================================
+            # AMBIL 3 TAHUN: 2023, 2024, 2025
+            # ==================================================
+
+            for tahun_data in range(
+                tahun_mulai,
+                tahun_selesai + 1,
+            ):
+
+                try:
+                    print(
+                        f"  Mengambil tahun {tahun_data}...",
+                        end=" ",
+                    )
+
+                    result = get_tablestatistic_view(
+                        domain_id=domain_id,
+                        table_id=table_id,
+                        tahun=tahun_data,
+                    )
+
+                    data = result.get("data", [])
+
+                    if (
+                        not isinstance(data, list)
+                        or len(data) < 2
+                    ):
+                        raise RuntimeError(
+                            "Response API tidak memiliki "
+                            "struktur data yang diharapkan"
+                        )
+
+                    table_data = data[1]
+
+                    if not isinstance(table_data, dict):
+                        raise RuntimeError(
+                            "Payload tabel tidak valid"
+                        )
+
+                    table_rows = table_data.get(
+                        "data",
+                        [],
+                    )
+
+                    if not isinstance(table_rows, list):
+                        raise RuntimeError(
+                            "Data wilayah tidak ditemukan"
+                        )
+
+                    found = 0
+
+                    for row in table_rows:
+
+                        if not isinstance(row, dict):
+                            continue
+
+                        variables = row.get(
+                            "variables",
+                            {},
+                        )
+
+                        if ratio_variable_id not in variables:
+                            continue
+
+                        variable = variables[
+                            ratio_variable_id
+                        ]
+
+                        value = (
+                            variable.get("value")
+                            if isinstance(variable, dict)
+                            else variable
+                        )
+
+                        if value in (
+                            None,
+                            "",
+                            "-",
+                            "–",
+                        ):
+                            continue
+
+                        value_str = str(value).strip()
+
+                        # BPS biasanya menggunakan koma
+                        # sebagai decimal separator.
+                        value_str = (
+                            value_str
+                            .replace(".", "")
+                            .replace(",", ".")
+                        )
+
+                        try:
+                            data_y = float(value_str)
+                        except (ValueError, TypeError):
+                            continue
+
+                        kode_wilayah = str(
+                            row.get(
+                                "kode_wilayah",
+                                "",
+                            )
+                        ).strip()
+
+                        wilayah = str(
+                            row.get(
+                                "label",
+                                "",
+                            )
+                        ).strip()
+
+                        if not wilayah:
+                            continue
+
+                        rows.append(
+                            {
+                                "wilayah": wilayah,
+                                "kode_wilayah": kode_wilayah,
+                                "provinsi": provinsi,
+
+                                # Tahun data sebenarnya
+                                "data_x": (
+                                    f"{tahun_data}-01-01"
+                                ),
+
+                                "data_y": data_y,
+
+                                "satuan": config.get(
+                                    "default_satuan",
+                                    "Rasio",
+                                ),
+
+                                "turvar": config.get(
+                                    "indikator",
+                                    "Rasio Jenis Kelamin Penduduk",
+                                ),
+                            }
+                        )
+
+                        found += 1
+
+                    if found == 0:
+                        raise RuntimeError(
+                            "Tidak ada nilai Rasio Jenis Kelamin "
+                            f"untuk tahun {tahun_data}"
+                        )
+
+                    print(
+                        f"OK: {found} baris"
+                    )
+
+                except Exception as e:
+
+                    print(
+                        f"FAILED: {type(e).__name__}: {e}"
+                    )
+
+                    failed.append(
+                        {
+                            "provinsi": provinsi,
+                            "domain": domain_id,
+                            "tahun": tahun_data,
+                            "error": str(e),
+                        }
+                    )
+
+        except Exception as e:
+
+            print(
+                f"  FAILED TABLE: "
+                f"{type(e).__name__}: {e}"
+            )
+
+            # Kalau tabelnya tidak ditemukan,
+            # catat ketiga tahun sebagai gagal.
+            for tahun_data in range(
+                tahun_mulai,
+                tahun_selesai + 1,
+            ):
+                failed.append(
+                    {
+                        "provinsi": provinsi,
+                        "domain": domain_id,
+                        "tahun": tahun_data,
+                        "error": str(e),
+                    }
+                )
+
+    if not rows:
+        raise RuntimeError(
+            "Tidak ada data 30773 yang berhasil diambil."
+        )
+
+    df = pd.DataFrame(rows)
+
+    # Hindari duplikasi wilayah-tahun
+    df = df.drop_duplicates(
+        subset=[
+            "kode_wilayah",
+            "data_x",
+        ],
+        keep="first",
+    )
+
+    print("\n" + "=" * 70)
+    print("HASIL SCRAPING 30773")
+    print("=" * 70)
+
+    print(
+        f"Periode data : "
+        f"{tahun_mulai}-{tahun_selesai}"
+    )
+
+    print(
+        f"Total baris : {len(df)}"
+    )
+
+    print(
+        f"Provinsi berhasil : "
+        f"{len(RASIO_JENIS_KELAMIN_PROVINCES) - len(set(
+            item['provinsi'] for item in failed
+        ))}"
+    )
+
+    print(
+        f"Total gagal : "
+        f"{len(failed)}"
+    )
+
+    if failed:
+        print("\nData gagal:")
+
+        for item in failed:
+            print(
+                f"- {item['provinsi']} "
+                f"({item['tahun']}): "
+                f"{item['error']}"
+            )
+
+    return df
+
+
+def update_idnamadata_rasio_jenis_kelamin(
+    idnamadata=30773,
+    tahun=2025,
+):
+    """
+    Pipeline khusus ID 30773.
+    """
+
+    config = get_config(BPS_CONFIG,
+        "rasio_jenis_kelamin"
+    )
+
+    paths = get_storage_paths(
+        config,
+        PROJECT_ROOT,
+    )
+
+    print(
+        "\n"
+        + "=" * 70
+    )
+    print(
+        "BPS DATASET 30773 - "
+        "RASIO JENIS KELAMIN"
+    )
+    print(
+        "=" * 70
+    )
+
+    df_raw = scrape_rasio_jenis_kelamin(
+        tahun=tahun,
+        config=config,
+    )
+
+    print(
+        f"\nRaw dataframe: "
+        f"{df_raw.shape}"
+    )
+
+    # --------------------------------------------------------
+    # Simpan raw per tahun
+    # --------------------------------------------------------
+    paths = get_storage_paths(
+        config,
+        PROJECT_ROOT,
+    )
+
+    raw_path = paths["raw_file"]
+    final_path = paths["final_file"]
+
+    raw_paths = []
+
+    tahun_raw = pd.to_datetime(
+        df_raw["data_x"],
+        errors="coerce",
+    ).dt.year
+
+    for tahun_raw_value in sorted(
+        tahun_raw.dropna().unique()
+    ):
+        df_raw_tahun = df_raw[
+            tahun_raw == tahun_raw_value
+        ].copy()
+
+        raw_path_tahun = (
+            Path(raw_path).parent
+            / (
+                "rasio_jenis_kelamin_penduduk_raw_"
+                f"{int(tahun_raw_value)}.parquet"
+            )
+        )
+
+        raw_path_tahun.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        df_raw_tahun.to_parquet(
+            raw_path_tahun,
+            index=False,
+        )
+
+        raw_paths.append(raw_path_tahun)
+
+        print(
+            f"RAW {int(tahun_raw_value)}:"
+            f" {len(df_raw_tahun)} row ->"
+            f" {raw_path_tahun}"
+        )
+
+    # --------------------------------------------------------
+    # Transform mengikuti pipeline existing
+    # --------------------------------------------------------
+
+    etl = BPSETL()
+
+    df_final = etl.transform_rasio_jenis_kelamin(
+        df_raw=df_raw,
+        id_nama_data=idnamadata,
+        config=config,
+    )
+
+    print(
+        f"\nFinal dataframe: "
+        f"{df_final.shape}"
+    )
+
+    print(
+        "\nPreview final:"
+    )
+
+    print(
+        df_final.head()
+    )
+
+    # --------------------------------------------------------
+    # Simpan final CSV
+    # --------------------------------------------------------
+
+    Path(final_path).parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    df_final.to_csv(
+        final_path,
+        index=False,
+    )
+
+    print(
+        f"\nFinal CSV tersimpan:"
+        f"\n{final_path}"
+    )
+
+    # --------------------------------------------------------
+    # Upload MinIO mengikuti pipeline existing
+    # --------------------------------------------------------
+
+    try:
+
+        # RAW PER TAHUN
+        for raw_path_tahun in raw_paths:
+
+            with open(raw_path_tahun, "rb") as file:
+                raw_bytes = file.read()
+
+            raw_object_name = (
+                f"bps/{config['storage_name']}/raw/"
+                f"{os.path.basename(raw_path_tahun)}"
+            )
+
+            upload_bytes(
+                etl.minio_client,
+                MINIO_BUCKET,
+                raw_bytes,
+                raw_object_name,
+                "application/octet-stream",
+            )
+
+            print(
+                f"RAW   : {MINIO_BUCKET}/{raw_object_name}"
+            )
+
+        # FINAL
+        with open(final_path, "rb") as file:
+            final_bytes = file.read()
+
+        final_object_name = (
+            f"bps/{config['storage_name']}/final/"
+            f"{os.path.basename(final_path)}"
+        )
+
+        upload_bytes(
+            etl.minio_client,
+            MINIO_BUCKET,
+            final_bytes,
+            final_object_name,
+            "text/csv",
+        )
+
+        print("\nUpload MinIO: OK")
+
+        print(
+            f"RAW   : {MINIO_BUCKET}/{raw_object_name}"
+        )
+
+        print(
+            f"FINAL : {MINIO_BUCKET}/{final_object_name}"
+        )
+
+    except Exception as e:
+        print(
+            "\nUpload MinIO gagal:"
+            f" {e}"
+        )
+
+    return df_final
+
+def update_idnamadata_ipm_laki_laki(
+    idnamadata=9913,
+    tahun=2025,
+):
+    config = get_config(BPS_CONFIG,
+        "ipm_laki_laki"
+    )
+
+    print("\n" + "=" * 70)
+    print(
+        "BPS DATASET 9913 - "
+        "IPM LAKI-LAKI"
+    )
+    print("=" * 70)
+
+    # ==============================
+    # XFLASK EXISTING
+    # ==============================
+
+    print("\n" + "=" * 60)
+    print(
+        "STEP 1 - EXISTING XFLASK"
+    )
+    print("=" * 60)
+
+    df_xflask = get_xflask_api_data(
+        idnamadata
+    )
+
+    if df_xflask.empty:
+        raise RuntimeError(
+            "Data existing XFlask kosong."
+        )
+
+    print(
+        "XFlask rows:",
+        len(df_xflask),
+    )
+
+    # ==============================
+    # SCRAPE BPS
+    # ==============================
+
+    print("\n" + "=" * 60)
+    print(
+        "STEP 2 - SCRAP BPS"
+    )
+    print("=" * 60)
+
+    df_bps = scrape_ipm_laki_laki(
+        tahun=tahun,
+        config=config,
+    )
+
+    print(
+        "\nRaw dataframe:",
+        df_bps.shape,
+    )
+
+    # ==============================
+    # SAVE RAW PER TAHUN
+    # ==============================
+
+    paths = get_storage_paths(
+        config,
+        PROJECT_ROOT,
+    )
+
+    raw_path = paths["raw_file"]
+
+    raw_paths = []
+
+    tahun_raw = pd.to_datetime(
+        df_bps["data_x"],
+        errors="coerce",
+    ).dt.year
+
+    for tahun_raw_value in sorted(
+        tahun_raw.dropna().unique()
+    ):
+
+        df_raw_tahun = df_bps[
+            tahun_raw == tahun_raw_value
+        ].copy()
+
+        raw_path_tahun = (
+            Path(raw_path).parent
+            / (
+                f"{config['file_name']}_"
+                f"{int(tahun_raw_value)}_raw.parquet"
+            )
+        )
+
+        raw_path_tahun.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        df_raw_tahun.to_parquet(
+            raw_path_tahun,
+            index=False,
+        )
+
+        raw_paths.append(
+            raw_path_tahun
+        )
+
+        print(
+            f"RAW {int(tahun_raw_value)}:"
+            f" {len(df_raw_tahun)} row ->"
+            f" {raw_path_tahun}"
+        )
+
+    # ==============================
+    # MATCH
+    # ==============================
+
+    print("\n" + "=" * 60)
+    print(
+        "STEP 3 - MATCH BPS VS XFLASK"
+    )
+    print("=" * 60)
+
+    df_match = (
+        match_ipm_laki_laki_bps_xflask(
+            df_bps,
+            df_xflask,
+        )
+    )
+
+    # ==============================
+    # FINAL
+    # ==============================
+
+    df_final = df_match.copy()
+
+    df_final["idnamadata"] = (
+        idnamadata
+    )
+
+    df_final["nama_indikator"] = (
+        config["indikator"]
+    )
+
+    df_final["item"] = (
+        "Laki-laki"
+    )
+
+    df_final["satuan"] = (
+        config["default_satuan"]
+    )
+
+    df_final["sumber"] = (
+        config["sumber"]
+    )
+
+    df_final["note"] = (
+        config["note"]
+    )
+
+    df_final["nama_data_import"] = (
+        config["nama_data_import"]
+    )
+
+    df_final["data_x"] = (
+        pd.to_datetime(
+            df_final["data_x"],
+            errors="coerce",
+        )
+        .dt.strftime("%d-%m-%Y")
+    )
+
+    final_columns = [
+        "idnamadata",
+        "nama_indikator",
+        "kode_wilayah",
+        "provinsi_bps",
+        "data_x",
+        "data_y_bps",
+        "satuan",
+        "sumber",
+        "note",
+        "nama_data_import",
+        "status_match",
+    ]
+
+    df_final = df_final[
+        [
+            c
+            for c in final_columns
+            if c in df_final.columns
+        ]
+    ].copy()
+
+    df_final = df_final.rename(
+        columns={
+            "provinsi_bps": "provinsi",
+            "data_y_bps": "data_y",
+        }
+    )
+
+    # ==============================
+    # SAVE
+    # ==============================
+
+    paths = get_storage_paths(
+        config,
+        PROJECT_ROOT,
+    )
+
+    final_file = paths[
+        "final_file"
+    ]
+
+    save_csv(
+        df_final,
+        final_file,
+    )
+
+    print(
+        "\nFINAL FILE:",
+        final_file,
+    )
+
+    # ==============================
+    # MINIO
+    # ==============================
+
+    etl = BPSETL()
+
+    storage_name = config[
+        "storage_name"
+    ]
+
+    file_name = config[
+        "file_name"
+    ]
+
+    # ==============================
+    # UPLOAD RAW PER TAHUN
+    # ==============================
+
+    for raw_path_tahun in raw_paths:
+
+        with open(
+            raw_path_tahun,
+            "rb",
+        ) as f:
+            raw_bytes = f.read()
+
+        raw_object_name = (
+            f"bps/{storage_name}/raw/"
+            f"{raw_path_tahun.name}"
+        )
+
+        upload_bytes(
+            etl.minio_client,
+            MINIO_BUCKET,
+            raw_bytes,
+            raw_object_name,
+            "application/octet-stream",
+        )
+
+        print(
+            "RAW MinIO:",
+            f"{MINIO_BUCKET}/{raw_object_name}",
+        )
+
+    # ==============================
+    # UPLOAD FINAL
+    # ==============================
+
+    final_object_name = (
+        f"bps/{storage_name}/final/"
+        f"{file_name}.csv"
+    )
+
+    with open(
+        final_file,
+        "rb",
+    ) as f:
+        csv_bytes = f.read()
+
+    upload_bytes(
+        etl.minio_client,
+        MINIO_BUCKET,
+        csv_bytes,
+        final_object_name,
+        "text/csv",
+    )
+
+    print(
+        "\nFINAL MinIO:",
+        f"{MINIO_BUCKET}/{final_object_name}",
+    )
+
+    return df_final
+
+def update_idnamadata_ipm_perempuan(
+    idnamadata=9914,
+    tahun=2025,
+):
+    config = get_config(BPS_CONFIG,
+        "ipm_perempuan"
+    )
+
+    print("\n" + "=" * 70)
+    print(
+        "BPS DATASET 9914 - "
+        "IPM PEREMPUAN"
+    )
+    print("=" * 70)
+
+    # ==============================
+    # XFLASK EXISTING
+    # ==============================
+
+    print("\n" + "=" * 60)
+    print(
+        "STEP 1 - EXISTING XFLASK"
+    )
+    print("=" * 60)
+
+    df_xflask = get_xflask_api_data(
+        idnamadata
+    )
+
+    if df_xflask.empty:
+        raise RuntimeError(
+            "Data existing XFlask kosong."
+        )
+
+    print(
+        "XFlask rows:",
+        len(df_xflask),
+    )
+
+    # ==============================
+    # SCRAPE BPS
+    # ==============================
+
+    print("\n" + "=" * 60)
+    print(
+        "STEP 2 - SCRAP BPS"
+    )
+    print("=" * 60)
+
+    df_bps = scrape_ipm_perempuan(
+        tahun=tahun,
+        config=config,
+    )
+
+    print(
+        "\nRaw dataframe:",
+        df_bps.shape,
+    )
+
+    # ==============================
+    # SAVE RAW PER TAHUN
+    # ==============================
+
+    paths = get_storage_paths(
+        config,
+        PROJECT_ROOT,
+    )
+
+    raw_path = paths["raw_file"]
+    raw_paths = []
+
+    tahun_raw = pd.to_datetime(
+        df_bps["data_x"],
+        errors="coerce",
+    ).dt.year
+
+    for tahun_raw_value in sorted(
+        tahun_raw.dropna().unique()
+    ):
+
+        df_raw_tahun = df_bps[
+            tahun_raw == tahun_raw_value
+        ].copy()
+
+        raw_path_tahun = (
+            Path(raw_path).parent
+            / (
+                f"{config['file_name']}_"
+                f"{int(tahun_raw_value)}_raw.parquet"
+            )
+        )
+
+        raw_path_tahun.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        df_raw_tahun.to_parquet(
+            raw_path_tahun,
+            index=False,
+        )
+
+        raw_paths.append(
+            raw_path_tahun
+        )
+
+        print(
+            f"RAW {int(tahun_raw_value)}:"
+            f" {len(df_raw_tahun)} row ->"
+            f" {raw_path_tahun}"
+        )
+
+    # ==============================
+    # MATCH
+    # ==============================
+
+    print("\n" + "=" * 60)
+    print(
+        "STEP 3 - MATCH BPS VS XFLASK"
+    )
+    print("=" * 60)
+
+    df_match = (
+        match_ipm_laki_laki_bps_xflask(
+            df_bps,
+            df_xflask,
+        )
+    )
+
+    # ==============================
+    # FINAL
+    # ==============================
+
+    df_final = df_match.copy()
+
+    df_final["idnamadata"] = (
+        idnamadata
+    )
+
+    df_final["nama_indikator"] = (
+        config["indikator"]
+    )
+
+    df_final["item"] = (
+        "Perempuan"
+    )
+
+    df_final["satuan"] = (
+        config["default_satuan"]
+    )
+
+    df_final["sumber"] = (
+        config["sumber"]
+    )
+
+    df_final["note"] = (
+        config["note"]
+    )
+
+    df_final["nama_data_import"] = (
+        config["nama_data_import"]
+    )
+
+    df_final["data_x"] = (
+        pd.to_datetime(
+            df_final["data_x"],
+            errors="coerce",
+        )
+        .dt.strftime("%d-%m-%Y")
+    )
+
+    final_columns = [
+        "idnamadata",
+        "nama_indikator",
+        "kode_wilayah",
+        "provinsi_bps",
+        "data_x",
+        "data_y_bps",
+        "satuan",
+        "sumber",
+        "note",
+        "nama_data_import",
+        "status_match",
+    ]
+
+    df_final = df_final[
+        [
+            c
+            for c in final_columns
+            if c in df_final.columns
+        ]
+    ].copy()
+
+    df_final = df_final.rename(
+        columns={
+            "provinsi_bps": "provinsi",
+            "data_y_bps": "data_y",
+        }
+    )
+
+    # ==============================
+    # SAVE
+    # ==============================
+
+    final_file = paths[
+        "final_file"
+    ]
+
+    save_csv(
+        df_final,
+        final_file,
+    )
+
+    print(
+        "\nFINAL FILE:",
+        final_file,
+    )
+
+    # ==============================
+    # MINIO
+    # ==============================
+
+    etl = BPSETL()
+
+    storage_name = config[
+        "storage_name"
+    ]
+
+    file_name = config[
+        "file_name"
+    ]
+
+    # RAW PER TAHUN
+    for raw_path_tahun in raw_paths:
+
+        with open(
+            raw_path_tahun,
+            "rb",
+        ) as f:
+            raw_bytes = f.read()
+
+        raw_object_name = (
+            f"bps/{storage_name}/raw/"
+            f"{raw_path_tahun.name}"
+        )
+
+        upload_bytes(
+            etl.minio_client,
+            MINIO_BUCKET,
+            raw_bytes,
+            raw_object_name,
+            "application/octet-stream",
+        )
+
+        print(
+            "RAW MinIO:",
+            f"{MINIO_BUCKET}/{raw_object_name}",
+        )
+
+    # FINAL
+    final_object_name = (
+        f"bps/{storage_name}/final/"
+        f"{file_name}.csv"
+    )
+
+    with open(
+        final_file,
+        "rb",
+    ) as f:
+        csv_bytes = f.read()
+
+    upload_bytes(
+        etl.minio_client,
+        MINIO_BUCKET,
+        csv_bytes,
+        final_object_name,
+        "text/csv",
+    )
+
+    print(
+        "\nFINAL MinIO:",
+        f"{MINIO_BUCKET}/{final_object_name}",
+    )
+
+    return df_final
+
+def get_existing_xflask_data(id_nama_data, session=None):
     """
     Mengambil data existing dari XFlask sebagai referensi
     Tidak melakukan insert/update
@@ -996,12 +3841,12 @@ def get_existing_xflask_data(id_nama_data):
         raise RuntimeError(
             "KATADATA_API_KEY tidak ditemukan di .env"
         )
-    
-    session = create_session()
 
-    session.headers.update({
-        "X-API-Key": KATADATA_API_KEY
-    })
+    if session is None:
+        session = create_session()
+        session.headers.update({
+            "X-API-Key": KATADATA_API_KEY
+        })
 
     response = session.get(
         f"{DATABASE_BASE_URL}/data",
@@ -1419,7 +4264,7 @@ def get_hotel_simdasi_table_id(
         f"tetapi tahun {tahun} tidak tersedia "
         f"pada ketersediaan_tahun."
     )
-                
+
     # =====================================
     # FALLBACK
     # =====================================
@@ -1458,7 +4303,7 @@ def scrape_hotel_akomodasi(
     """
 
     if config is None:
-        config = get_bps_config(
+        config = get_config(BPS_CONFIG,
             "hotel_akomodasi"
         )
 
@@ -1783,7 +4628,7 @@ def scrape_hotel_akomodasi_publikasi(
     """
 
     if config is None:
-        config = get_bps_config(
+        config = get_config(BPS_CONFIG,
             "hotel_akomodasi"
         )
 
@@ -2275,7 +5120,7 @@ def scrape_hotel_akomodasi_range(
     """
 
     if config is None:
-        config = get_bps_config(
+        config = get_config(BPS_CONFIG,
             "hotel_akomodasi"
         )
 
@@ -3160,7 +6005,7 @@ def validate_hotel_id_provinsi(
     # ==============================
 
     print("TOTAL ROW EXISTING:", len(existing))
-    print("TOTAL PROVINSI EXISTING:", existing["provinsi_bps"].nunique())    
+    print("TOTAL PROVINSI EXISTING:", existing["provinsi_bps"].nunique())
 
     mapping_id = (
         existing[
@@ -3237,6 +6082,426 @@ def validate_hotel_id_provinsi(
 
     return existing, new_province
 
+def scrape_perceraian_lain_lain(
+    tahun,
+    config=None,
+):
+    """
+    Scraping dataset 16517:
+    Jumlah Perceraian Menurut Provinsi
+    Akibat Masalah Lain-Lain.
+
+    Sumber:
+        BPS SIMDASI.
+
+    RAW hanya:
+        kode_wilayah
+        provinsi
+        data_x
+        data_y
+    """
+
+    if config is None:
+        config = get_config(BPS_CONFIG,
+            "perceraian_lain_lain"
+        )
+
+    tahun = int(tahun)
+
+    if tahun < config["tahun_awal"] or tahun > config["tahun_terbaru"]:
+        raise ValueError(
+            f"Tahun {tahun} tidak valid untuk "
+            "dataset perceraian lain-lain. "
+            f"Range: {config['tahun_awal']}-"
+            f"{config['tahun_terbaru']}"
+        )
+
+    if not BPS_API_KEY:
+        raise RuntimeError(
+            "BPS_API_KEY tidak ditemukan di .env"
+        )
+
+    simdasi_id = config["simdasi_id"]
+    table_id = config["simdasi_table_id"]
+    variable_id = config["simdasi_variable_id"]
+    wilayah = config.get(
+        "simdasi_wilayah",
+        "0000000",
+    )
+
+    url = (
+        f"{BPS_BASE_URL}/interoperabilitas/"
+        f"datasource/simdasi/"
+        f"id/{simdasi_id}/"
+        f"tahun/{tahun}/"
+        f"id_tabel/{table_id}/"
+        f"wilayah/{wilayah}/"
+        f"key/{BPS_API_KEY}"
+    )
+
+    session = create_session()
+
+    print("\n========================================")
+    print("SCRAPE PERCERAIAN LAIN-LAIN")
+    print("========================================")
+    print("TAHUN:", tahun)
+    print(
+        "URL:",
+        url.replace(
+            BPS_API_KEY,
+            "***",
+        ),
+    )
+
+    response = session.get(
+        url,
+        timeout=60,
+    )
+
+    print(
+        "STATUS:",
+        response.status_code,
+    )
+
+    response.raise_for_status()
+
+    result = response.json()
+
+    if not isinstance(result, dict):
+        raise RuntimeError(
+            "Response BPS bukan dictionary."
+        )
+
+    data = result.get(
+        "data",
+        [],
+    )
+
+    if len(data) < 2:
+        raise RuntimeError(
+            f"Struktur response BPS tidak sesuai: {result}"
+        )
+
+    table = data[1]
+
+    if not isinstance(table, dict):
+        raise RuntimeError(
+            f"Data tabel BPS tidak sesuai: {table}"
+        )
+
+    rows = table.get(
+        "data",
+        [],
+    )
+
+    if not rows:
+        raise RuntimeError(
+            f"Tidak ada data perceraian "
+            f"tahun {tahun}."
+        )
+
+    parsed_rows = []
+
+    for row in rows:
+
+        if not isinstance(row, dict):
+            continue
+
+        kode_wilayah = (
+            row.get("kode_wilayah")
+            or row.get("kode")
+            or row.get("id_wilayah")
+        )
+
+        provinsi = (
+            row.get("label")
+            or row.get("label_raw")
+            or row.get("nama_wilayah")
+            or row.get("wilayah")
+        )
+
+        variables = row.get(
+            "variables",
+            {},
+        )
+
+        if not isinstance(
+            variables,
+            dict,
+        ):
+            continue
+
+        variable = variables.get(
+            variable_id
+        )
+
+        if not isinstance(
+            variable,
+            dict,
+        ):
+            value = pd.NA
+        else:
+            value = variable.get(
+                "value"
+            )
+
+        parsed_rows.append({
+            "kode_wilayah": str(
+                kode_wilayah
+            ).strip()
+            if kode_wilayah is not None
+            else pd.NA,
+
+            "provinsi": str(
+                provinsi
+            ).strip()
+            if provinsi is not None
+            else pd.NA,
+
+            "data_x": pd.Timestamp(
+                year=tahun,
+                month=12,
+                day=31,
+            ),
+
+            "data_y": value,
+        })
+
+    df_result = pd.DataFrame(
+        parsed_rows
+    )
+
+    if df_result.empty:
+        raise RuntimeError(
+            f"Tidak berhasil parsing "
+            f"data perceraian tahun {tahun}."
+        )
+
+    # ==========================================
+    # PARSE ANGKA BPS
+    # ==========================================
+
+    def parse_bps_number(value):
+
+        if pd.isna(value):
+            return pd.NA
+
+        value = str(value).strip()
+
+        if value in {
+            "",
+            "...",
+            "…",
+            "–",
+            "─",
+            "-",
+            "NA",
+            "N/A",
+        }:
+            return pd.NA
+
+        value = value.replace(
+            ".",
+            "",
+        )
+
+        value = value.replace(
+            ",",
+            ".",
+        )
+
+        try:
+
+            number = float(value)
+
+            if number.is_integer():
+                return int(number)
+
+            return number
+
+        except (
+            ValueError,
+            TypeError,
+        ):
+            return pd.NA
+
+    df_result["data_y"] = (
+        df_result["data_y"]
+        .apply(parse_bps_number)
+    )
+
+    df_result["data_y"] = pd.to_numeric(
+        df_result["data_y"],
+        errors="coerce",
+    )
+
+    # ==========================================
+    # RAW ONLY
+    # ==========================================
+
+    raw_columns = [
+        "kode_wilayah",
+        "provinsi",
+        "data_x",
+        "data_y",
+    ]
+
+    df_result = df_result[
+        raw_columns
+    ].copy()
+
+    df_result = (
+        df_result
+        .drop_duplicates(
+            subset=[
+                "kode_wilayah",
+                "data_x",
+            ],
+            keep="last",
+        )
+        .sort_values(
+            [
+                "data_x",
+                "kode_wilayah",
+            ]
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    print(
+        "\nJUMLAH DATA:",
+        len(df_result),
+    )
+
+    print(
+        "NILAI KOSONG:",
+        df_result["data_y"]
+        .isna()
+        .sum(),
+    )
+
+    print(
+        "\nDATA HASIL SCRAPING:"
+    )
+
+    print(
+        df_result.to_string(
+            index=False
+        )
+    )
+
+    return df_result
+
+def scrape_perceraian_lain_lain_range(
+    tahun_awal=2020,
+    tahun_akhir=2023,
+    config=None,
+):
+    """
+    Scrape dataset 16517 per tahun.
+
+    Tahun:
+        2020
+        2021
+        2022
+        2023
+
+    RAW disimpan PER TAHUN.
+    """
+
+    if config is None:
+        config = get_config(BPS_CONFIG,
+            "perceraian_lain_lain"
+        )
+
+    tahun_awal = int(tahun_awal)
+    tahun_akhir = int(tahun_akhir)
+
+    raw_dir = (
+        PROJECT_ROOT
+        / "data"
+        / "raw"
+        / "bps"
+        / config["storage_name"]
+    )
+
+    raw_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    file_name = config[
+        "file_name"
+    ]
+
+    all_data = []
+
+    print("\n========================================")
+    print("PERCERAIAN LAIN-LAIN - RANGE")
+    print("========================================")
+    print(
+        f"TAHUN: {tahun_awal}-{tahun_akhir}"
+    )
+
+    for tahun in range(
+        tahun_awal,
+        tahun_akhir + 1,
+    ):
+
+        print("\n----------------------------------------")
+        print(
+            f"SCRAPE TAHUN {tahun}"
+        )
+        print("----------------------------------------")
+
+        df = scrape_perceraian_lain_lain(
+            tahun=tahun,
+            config=config,
+        )
+
+        if df.empty:
+            print(
+                f"⚠️ Data kosong tahun {tahun}"
+            )
+            continue
+
+        raw_path = (
+            raw_dir
+            / f"{file_name}_{tahun}_raw.parquet"
+        )
+
+        df.to_parquet(
+            raw_path,
+            index=False,
+        )
+
+        print(
+            f"✅ RAW {tahun} BERHASIL"
+        )
+        print(
+            f"   ROW  : {len(df)}"
+        )
+        print(
+            f"   FILE : {raw_path}"
+        )
+
+        all_data.append(df)
+
+    if not all_data:
+        raise RuntimeError(
+            "Tidak ada data perceraian "
+            "yang berhasil di-scrape."
+        )
+
+    df_raw = pd.concat(
+        all_data,
+        ignore_index=True,
+    )
+
+    return df_raw
+
 def inspect_xflask_gini(id_nama_data=14288):
     """
     Mengecek struktur data Gini Ration yang sudah ada di XFlask.
@@ -3275,36 +6540,376 @@ def inspect_xflask_gini(id_nama_data=14288):
 
 class BPSETL:
 
-    def __init__(self):
+    def __init__(
+        self,
+        config=None,
+        session=None,
+        minio_client=None,
+    ):
+        if config is None:
+            config = get_config(
+                BPS_CONFIG,
+                "gini_ratio",
+            )
 
-        config = get_bps_config("gini_ratio")
-        paths = get_storage_paths(config)
+        self.config = config
+
+        paths = get_storage_paths(
+            config,
+            PROJECT_ROOT,
+        )
 
         self.raw_file = paths["raw_file"]
         self.final_file = paths["final_file"]
 
         self.minio_client = (
-            get_minio_client()
+            minio_client
+            if minio_client is not None
+            else get_minio_client()
         )
-
 
         if not KATADATA_API_KEY:
-
             raise RuntimeError(
-                "KATADATA_API_KEY "
-                "tidak ditemukan di .env"
+                "KATADATA_API_KEY tidak ditemukan di .env"
             )
 
-
         self.session = (
-            create_session()
+            session
+            if session is not None
+            else create_session()
         )
 
-
         self.session.headers.update({
-            "X-API-Key":
-                KATADATA_API_KEY
+            "X-API-Key": KATADATA_API_KEY
         })
+
+    def transform_rasio_jenis_kelamin(
+        self,
+        df_raw,
+        id_nama_data,
+        config,
+    ):
+        """
+        Transform khusus BPS ID 30773
+        - Rasio Jenis Kelamin Penduduk
+        """
+
+        indikator = config.get(
+            "indikator",
+            "Rasio Jenis Kelamin Penduduk",
+        )
+
+        default_satuan = config.get(
+            "default_satuan",
+            "Rasio",
+        )
+
+        sumber = config.get(
+            "sumber",
+            pd.NA,
+        )
+
+        note = config.get(
+            "note",
+            pd.NA,
+        )
+
+        nama_data_import = config.get(
+            "nama_data_import",
+            pd.NA,
+        )
+
+        print("\nWILAYAH RAW:")
+        print(
+            df_raw["wilayah"]
+            .drop_duplicates()
+            .to_string(index=False)
+        )
+
+        print(
+            "\nJUMLAH WILAYAH:",
+            df_raw["wilayah"].nunique(),
+        )
+
+        print(
+            "\n=============================="
+        )
+        print("TRANSFORM DATA")
+        print(
+            "=============================="
+        )
+
+        df = normalize_dataframe(
+            df_raw,
+            text_columns=[
+                "kode_wilayah",
+                "wilayah",
+                "provinsi",
+            ],
+            date_columns=[
+                "data_x",
+            ],
+        )
+
+        # ----------------------------------------------------
+        # BUANG BARIS PROVINSI
+        # ----------------------------------------------------
+
+        df = df[
+            ~df["wilayah"].isin([
+                "Aceh",
+                "Sumatera Utara",
+                "Sumatera Barat",
+                "Riau",
+                "Jambi",
+                "Sumatera Selatan",
+                "Bengkulu",
+                "Lampung",
+                "Kepulauan Bangka Belitung",
+                "Kepulauan Riau",
+                "DKI Jakarta",
+                "Jawa Barat",
+                "Jawa Tengah",
+                "DI Yogyakarta",
+                "Jawa Timur",
+                "Banten",
+                "Bali",
+                "Nusa Tenggara Barat",
+                "Nusa Tenggara Timur",
+                "Kalimantan Barat",
+                "Kalimantan Tengah",
+                "Kalimantan Selatan",
+                "Kalimantan Timur",
+                "Kalimantan Utara",
+                "Sulawesi Utara",
+                "Sulawesi Tengah",
+                "Sulawesi Selatan",
+                "Sulawesi Tenggara",
+                "Gorontalo",
+                "Sulawesi Barat",
+                "Maluku",
+                "Maluku Utara",
+                "Papua Barat",
+                "Papua",
+            ])
+        ].copy()
+
+        print(
+            "JUMLAH ROW SETELAH "
+            "BUANG PROVINSI:",
+            len(df),
+        )
+
+        # ----------------------------------------------------
+        # TENTUKAN KABUPATEN / KOTA
+        # ----------------------------------------------------
+
+        kode_belakang = pd.to_numeric(
+            df["kode_wilayah"]
+            .astype("string")
+            .str[-2:],
+            errors="coerce",
+        )
+
+        is_kota = (
+            (kode_belakang >= 71)
+            | df["wilayah"]
+                .astype("string")
+                .str.match(
+                    r"^(?:\d+\s+)?Kota\s+",
+                    case=False,
+                    na=False,
+                )
+        )
+
+        # Bersihkan nama wilayah
+        df["kota"] = (
+            df["wilayah"]
+            .astype("string")
+            .str.strip()
+            .str.replace(
+                r"^\d+\s+",
+                "",
+                regex=True,
+            )
+            .str.replace(
+                r"^Kabupaten\s+",
+                "",
+                regex=True,
+                case=False,
+            )
+            .str.replace(
+                r"^Kab\.\s*",
+                "",
+                regex=True,
+                case=False,
+            )
+            .str.replace(
+                r"^Kota\s+",
+                "",
+                regex=True,
+                case=False,
+            )
+            .str.strip()
+        )
+
+        # Kabupaten
+        df.loc[~is_kota, "kota"] = (
+            "Kab. "
+            + df.loc[~is_kota, "kota"]
+        )
+
+        # Kota
+        df.loc[is_kota, "kota"] = (
+            "Kota "
+            + df.loc[is_kota, "kota"]
+        )
+
+        # ----------------------------------------------------
+        # BUANG WILAYAH BUKAN KABUPATEN / KOTA
+        # ----------------------------------------------------
+
+        df = df[
+            ~df["kota"].isin([
+                "Kab. Provinsi Jawa Tengah",
+                "Kab. Nusa Tenggara Timur",
+                "Kota Kalimantan Timur",
+            ])
+        ].copy()
+
+        # ----------------------------------------------------
+        # SPECIAL CASE BPS
+        # ----------------------------------------------------
+
+        df.loc[
+            df["wilayah"] == "Labuanbatu Utara",
+            "kota",
+        ] = "Kab. Labuhanbatu Utara"
+
+        df.loc[
+            df["wilayah"] == "Toba",
+            "kota",
+        ] = "Kab. Toba Samosir"
+
+        df.loc[
+            df["kota"] == "Kab. Surakarta",
+            "kota",
+        ] = "Kota Surakarta"
+
+        df.loc[
+            df["kota"] == "Kab. Salatiga",
+            "kota",
+        ] = "Kota Salatiga"
+
+        df.loc[
+            df["kota"] == "Kab. Mahakam Ulu",
+            "kota",
+        ] = "Kab. Mahakam Hulu"
+
+        df.loc[
+            df["kota"] == "Kab. Kepulauan Sitaro",
+            "kota",
+        ] = "Kab. Kep. Siau Tagulandang Biaro"
+
+        df.loc[
+            (df["wilayah"] == "Kota Baru")
+            & (df["provinsi"] == "Kalimantan Selatan"),
+            "kota"
+        ] = "Kab. Kotabaru"
+
+        # ----------------------------------------------------
+        # FINAL DATA
+        # ----------------------------------------------------
+
+        df_final = pd.DataFrame({
+
+            "kota":
+                df["kota"],
+
+            "provinsi":
+                df["provinsi"],
+
+            "nama_indikator":
+                indikator,
+
+            "nama_item": (
+                df["turvar"]
+                if "turvar" in df.columns
+                else pd.NA
+            ),
+
+            "idnamadata":
+                id_nama_data,
+
+            "data_x": (
+                pd.to_datetime(
+                    df["data_x"],
+                    errors="coerce",
+                )
+                .apply(
+                    lambda x: (
+                        x.replace(
+                            month=12,
+                            day=31,
+                        )
+                        if pd.notna(x)
+                        else pd.NaT
+                    )
+                )
+                .dt.strftime("%d-%m-%Y")
+            ),
+
+            "data_y":
+                pd.to_numeric(
+                    df["data_y"],
+                    errors="coerce",
+                ),
+
+            "satuan": (
+                df["satuan"]
+                .fillna(default_satuan)
+                .astype("string")
+                .str.strip()
+                .replace(
+                    "",
+                    default_satuan,
+                )
+            ),
+
+            "sumber":
+                sumber,
+
+            "note":
+                note,
+
+            "nama_data_import":
+                nama_data_import,
+        })
+
+        # Buang data_y kosong
+        df_final = df_final[
+            df_final["data_y"].notna()
+        ].copy()
+
+        # Normalisasi nama item
+        if "nama_item" in df_final.columns:
+            df_final["nama_item"] = (
+                df_final["nama_item"]
+                .astype("string")
+                .str.strip()
+                .replace({
+                    "SMTA": "SMA",
+                    "Laki-Laki": "Laki-laki",
+                    "Laki-laki+Perempuan": "Jumlah",
+                })
+            )
+
+        print(
+            "JUMLAH FINAL ROW:",
+            len(df_final),
+        )
+
+        return df_final
 
 
     def load_raw(self):
@@ -3745,7 +7350,7 @@ class BPSETL:
                 )
             ),
 
-            "sumber": sumber, 
+            "sumber": sumber,
 
             "note": note,
 
@@ -3875,7 +7480,7 @@ class BPSETL:
         )
 
         if config is None:
-            config = get_bps_config(
+            config = get_config(BPS_CONFIG,
                 "gini_ratio"
             )
 
@@ -3941,7 +7546,7 @@ def _resolve_gini_idnamadata(
     if idnamadata is not None:
         return int(idnamadata)
 
-    config = get_bps_config(
+    config = get_config(BPS_CONFIG,
         "gini_ratio"
     )
 
@@ -3962,21 +7567,46 @@ def _resolve_gini_idnamadata(
 
     return id_nama_data
 
-def get_latest_bps_year(config):
-    """
-    Mengambil tahun terbaru yang tersedia dari seluruh konfigurasi BPS.
-    """
+def get_latest_bps_year(
+        config,
+        session=None,
+        metadata_cache=None):
+
+    if session is None:
+        session = create_session()
 
     tahun_terbaru = None
+    checked = set()
 
     for scraper_config in config["configs"]:
-        scraper = BPSScraper(
-            domain_id=scraper_config["domain_id"],
-            var_id=scraper_config["var_id"],
-            provinsi=scraper_config["provinsi"],
+        key = (
+            str(scraper_config["domain_id"]),
+            int(scraper_config["var_id"])
         )
 
-        years = scraper.get_available_years()
+        if key in checked:
+            continue
+
+        checked.add(key)
+
+        years = (
+            metadata_cache.get(key)
+            if metadata_cache is not None
+            else None
+        )
+
+        if years is None:
+            scraper = BPSScraper(
+                domain_id=scraper_config["domain_id"],
+                var_id=scraper_config["var_id"],
+                provinsi=scraper_config["provinsi"],
+                session=session,
+            )
+
+            years = scraper.get_available_years()
+
+            if metadata_cache is not None:
+                metadata_cache[key] = years
 
         tahun_valid = [
             int(year["th"])
@@ -3987,27 +7617,23 @@ def get_latest_bps_year(config):
         if tahun_valid:
             kandidat = max(tahun_valid)
 
-            if (
-                tahun_terbaru is None
-                or kandidat > tahun_terbaru
-            ):
+            if tahun_terbaru is None or kandidat > tahun_terbaru:
                 tahun_terbaru = kandidat
 
     if tahun_terbaru is None:
-        raise RuntimeError(
-            "Tidak ditemukan tahun data BPS."
-        )
+        raise RuntimeError("Tidak ditemukan tahun data BPS.")
 
     return tahun_terbaru
 
-def get_existing_latest_year(id_nama_data):
+def get_existing_latest_year(id_nama_data, session=None):
     """
     Mengambil data existing dari XFlask dan mencari
     data_x terbaru yang sudah tersimpan.
     """
 
     df_existing = get_existing_xflask_data(
-        id_nama_data
+        id_nama_data,
+        session=session,
     )
 
     if df_existing.empty:
@@ -4085,29 +7711,17 @@ def update_bps_dataset(
     idnamadata=None,
     iditem=None,
     backfill=True,
+    metadata_cache = None,
 ):
-    """
-    Generic update untuk dataset BPS.
-
-    backfill=True:
-        Ambil seluruh histori.
-
-    backfill=False:
-        Ambil data terbaru + maksimal dua periode sebelumnya.
-
-    Output:
-        - raw parquet
-        - final csv
-        - upload raw ke MinIO
-        - upload final ke MinIO
-    """
+    bps_session = create_session()
+    etl = BPSETL(
+        config=config,
+    )
 
     # ==============================
     # RESOLVE ID NAMA DATA
     # ==============================
     if idnamadata is None:
-        etl = BPSETL()
-
         df_nama = etl.get_nama_data()
 
         idnamadata = etl.match_nama_data(
@@ -4124,7 +7738,7 @@ def update_bps_dataset(
     # ==============================
     # STORAGE PATH
     # ==============================
-    paths = get_storage_paths(config)
+    paths = get_storage_paths(config, PROJECT_ROOT)
 
     raw_file = paths["raw_file"]
     final_file = paths["final_file"]
@@ -4142,6 +7756,9 @@ def update_bps_dataset(
     # ==============================
     # TENTUKAN RENTANG TAHUN
     # ==============================
+    if not backfill and metadata_cache is None:
+        metadata_cache = {}
+
     if backfill:
         tahun_awal = None
         tahun_akhir = None
@@ -4152,11 +7769,14 @@ def update_bps_dataset(
 
     else:
         tahun_existing = get_existing_latest_year(
-            idnamadata
+            idnamadata,
+            session=etl.session,
         )
 
         tahun_terbaru = get_latest_bps_year(
-            config
+            config,
+            session=bps_session,
+            metadata_cache=metadata_cache,
         )
 
         if tahun_existing is None:
@@ -4191,6 +7811,8 @@ def update_bps_dataset(
         raw_file=raw_file,
         tahun_awal=tahun_awal,
         tahun_akhir=tahun_akhir,
+        session=bps_session,
+        metadata_cache=metadata_cache,
     )
 
     if df_raw.empty:
@@ -4202,8 +7824,6 @@ def update_bps_dataset(
     # ==============================
     # TRANSFORM
     # ==============================
-    etl = BPSETL()
-
     df_final = etl.transform(
         df_raw,
         idnamadata,
@@ -4308,11 +7928,11 @@ def update_idnamadata_hotel(
     print("HOTEL AKOMODASI - 9869")
     print("=" * 60)
 
-    config = get_bps_config(
+    config = get_config(BPS_CONFIG,
         "hotel_akomodasi"
     )
 
-    paths = get_storage_paths(config)
+    paths = get_storage_paths(config, PROJECT_ROOT)
 
     raw_file = paths["raw_file"]
     final_file = paths["final_file"]
@@ -4334,7 +7954,7 @@ def update_idnamadata_hotel(
         raise RuntimeError(
             "Data existing XFlask kosong."
         )
-    
+
     # ==============================
     # TENTUKAN RANGE REFRESH
     # ==============================
@@ -4649,6 +8269,496 @@ def update_idnamadata_hotel(
 
     return df_final
 
+def match_perceraian_lain_lain_bps_xflask(
+    df_bps,
+    df_xflask,
+):
+    """
+    Match BPS vs XFlask berdasarkan:
+        provinsi + tahun
+
+    Nasional dipisahkan.
+    Data BPS tetap dipertahankan meskipun
+    belum ada di XFlask.
+    """
+
+    print("\n========================================")
+    print("MATCH BPS VS XFLASK")
+    print("========================================")
+
+    bps = df_bps.copy()
+    db = df_xflask.copy()
+
+    # ==============================
+    # VALIDASI
+    # ==============================
+
+    required_bps = [
+        "kode_wilayah",
+        "provinsi",
+        "data_x",
+        "data_y",
+    ]
+
+    required_db = [
+        "provinsi",
+        "id_provinsi",
+        "date",
+        "data_y",
+    ]
+
+    for column in required_bps:
+        if column not in bps.columns:
+            raise RuntimeError(
+                f"Kolom BPS tidak ditemukan: {column}"
+            )
+
+    for column in required_db:
+        if column not in db.columns:
+            raise RuntimeError(
+                f"Kolom XFlask tidak ditemukan: {column}"
+            )
+
+    # ==============================
+    # DATE
+    # ==============================
+
+    bps["data_x"] = pd.to_datetime(
+        bps["data_x"],
+        errors="coerce",
+    )
+
+    db["date"] = pd.to_datetime(
+        db["date"],
+        errors="coerce",
+    )
+
+    bps["tahun_match"] = (
+        bps["data_x"].dt.year
+    )
+
+    db["tahun_match"] = (
+        db["date"].dt.year
+    )
+
+    # ==============================
+    # NORMALISASI NAMA PROVINSI
+    # ==============================
+
+    bps["nama_match"] = (
+        bps["provinsi"]
+        .apply(normalize_province_name)
+    )
+
+    db["nama_match"] = (
+        db["provinsi"]
+        .apply(normalize_province_name)
+    )
+
+    # ==============================
+    # PISAH NASIONAL
+    # ==============================
+
+    db_provinsi = db[
+        db["id_provinsi"] != 0
+    ].copy()
+
+    # ==============================
+    # MAPPING PROVINSI + TAHUN
+    # ==============================
+
+    mapping = (
+        db_provinsi[
+            [
+                "nama_match",
+                "tahun_match",
+                "provinsi",
+                "id_provinsi",
+            ]
+        ]
+        .drop_duplicates(
+            subset=[
+                "nama_match",
+                "tahun_match",
+            ]
+        )
+    )
+
+    result = bps.merge(
+        mapping,
+        on=[
+            "nama_match",
+            "tahun_match",
+        ],
+        how="left",
+        suffixes=(
+            "_bps",
+            "_xflask",
+        ),
+    )
+
+    # ==============================
+    # STATUS
+    # ==============================
+
+    result["status_match"] = (
+        "PROVINSI BARU"
+    )
+
+    result.loc[
+        result["id_provinsi"].notna(),
+        "status_match",
+    ] = "UPDATE EXISTING"
+
+    result.loc[
+        result["data_y"].isna(),
+        "status_match",
+    ] = "SKIP NILAI KOSONG"
+
+    result["is_nasional"] = (
+        result["kode_wilayah"]
+        .astype("string")
+        .eq("0000000")
+    )
+
+    result.loc[
+        result["is_nasional"],
+        "status_match",
+    ] = "NASIONAL"
+
+    # ==============================
+    # SUMMARY
+    # ==============================
+
+    print(
+        "\nTOTAL DATA BPS:",
+        len(result),
+    )
+
+    print(
+        "UPDATE EXISTING:",
+        (
+            result["status_match"]
+            == "UPDATE EXISTING"
+        ).sum(),
+    )
+
+    print(
+        "PROVINSI BARU:",
+        (
+            result["status_match"]
+            == "PROVINSI BARU"
+        ).sum(),
+    )
+
+    print(
+        "NILAI KOSONG:",
+        (
+            result["status_match"]
+            == "SKIP NILAI KOSONG"
+        ).sum(),
+    )
+
+    print(
+        "NASIONAL:",
+        (
+            result["status_match"]
+            == "NASIONAL"
+        ).sum(),
+    )
+
+    return result
+
+def update_idnamadata_perceraian_lain_lain(
+    idnamadata=16517,
+    backfill=True,
+):
+    """
+    Pipeline dataset 16517:
+    Jumlah Perceraian Menurut Provinsi
+    Akibat Masalah Lain-Lain.
+    """
+
+    print("\n")
+    print("=" * 60)
+    print("PERCERAIAN LAIN-LAIN - 16517")
+    print("=" * 60)
+
+    config = get_config(BPS_CONFIG,
+        "perceraian_lain_lain"
+    )
+
+    # ==============================
+    # XFLASK EXISTING
+    # ==============================
+
+    print("\n")
+    print("=" * 60)
+    print("STEP 1 - EXISTING XFLASK")
+    print("=" * 60)
+
+    df_xflask = get_xflask_api_data(
+        idnamadata
+    )
+
+    if df_xflask.empty:
+        raise RuntimeError(
+            "Data existing XFlask kosong."
+        )
+
+    # ==============================
+    # RANGE
+    # ==============================
+
+    tahun_awal = int(
+        config["tahun_awal"]
+    )
+
+    tahun_akhir = int(
+        config["tahun_terbaru"]
+    )
+
+    print("\n========================================")
+    print("RANGE SCRAPING")
+    print("========================================")
+    print(
+        f"TAHUN: {tahun_awal}-{tahun_akhir}"
+    )
+
+    # ==============================
+    # SCRAPE
+    # ==============================
+
+    print("\n")
+    print("=" * 60)
+    print("STEP 2 - SCRAP BPS")
+    print("=" * 60)
+
+    df_bps = scrape_perceraian_lain_lain_range(
+        tahun_awal=tahun_awal,
+        tahun_akhir=tahun_akhir,
+        config=config,
+    )
+
+    if df_bps.empty:
+        raise RuntimeError(
+            "Data BPS kosong."
+        )
+
+    # ==============================
+    # MATCH
+    # ==============================
+
+    print("\n")
+    print("=" * 60)
+    print("STEP 3 - MATCH BPS VS XFLASK")
+    print("=" * 60)
+
+    df_match = (
+        match_perceraian_lain_lain_bps_xflask(
+            df_bps,
+            df_xflask,
+        )
+    )
+
+    # ==============================
+    # FINAL
+    # ==============================
+
+    print("\n")
+    print("=" * 60)
+    print("STEP 4 - FINAL DATA")
+    print("=" * 60)
+
+    df_final = df_match.copy()
+
+    df_final["idnamadata"] = (
+        idnamadata
+    )
+
+    df_final["nama_indikator"] = (
+        config["indikator"]
+    )
+
+    df_final["satuan"] = (
+        config["default_satuan"]
+    )
+
+    df_final["sumber"] = (
+        config["sumber"]
+    )
+
+    df_final["note"] = (
+        config["note"]
+    )
+
+    df_final["nama_data_import"] = (
+        config["nama_data_import"]
+    )
+
+    if "provinsi_bps" in df_final.columns:
+        df_final["provinsi"] = (
+            df_final["provinsi_bps"]
+        )
+
+    final_columns = [
+        "idnamadata",
+        "nama_indikator",
+        "kode_wilayah",
+        "provinsi",
+        "id_provinsi",
+        "data_x",
+        "data_y",
+        "satuan",
+        "sumber",
+        "note",
+        "nama_data_import",
+        "status_match",
+    ]
+
+    final_columns = [
+        column
+        for column in final_columns
+        if column in df_final.columns
+    ]
+
+    df_final = df_final[
+        final_columns
+    ].copy()
+
+    # ==============================
+    # SAVE FINAL
+    # ==============================
+
+    paths = get_storage_paths(config, PROJECT_ROOT)
+
+    final_file = paths["final_file"]
+
+    df_final["data_x"] = (
+        pd.to_datetime(
+            df_final["data_x"],
+            errors="coerce",
+        )
+        .dt.strftime("%d-%m-%Y")
+    )
+
+    save_csv(
+        df_final,
+        final_file,
+    )
+
+    print(
+        "\nFINAL FILE:",
+        final_file,
+    )
+
+    # ==============================
+    # MINIO
+    # ==============================
+
+    etl = BPSETL()
+
+    storage_name = config[
+        "storage_name"
+    ]
+
+    file_name = config[
+        "file_name"
+    ]
+
+    raw_dir = (
+        PROJECT_ROOT
+        / "data"
+        / "raw"
+        / "bps"
+        / storage_name
+    )
+
+    raw_files = sorted(
+        raw_dir.glob(
+            f"{file_name}_*_raw.parquet"
+        )
+    )
+
+    print("\n========================================")
+    print("UPLOAD RAW PARQUET PER TAHUN")
+    print("========================================")
+
+    for raw_path in raw_files:
+
+        match = re.search(
+            r"_(\d{4})_raw\.parquet$",
+            raw_path.name,
+        )
+
+        if not match:
+            continue
+
+        tahun = match.group(1)
+
+        print(
+            f"UPLOAD RAW {tahun}: "
+            f"{raw_path.name}"
+        )
+
+        with open(
+            raw_path,
+            "rb",
+        ) as f:
+            raw_bytes = f.read()
+
+        raw_object_name = (
+            f"bps/{storage_name}/raw/"
+            f"{raw_path.name}"
+        )
+
+        upload_bytes(
+            etl.minio_client,
+            MINIO_BUCKET,
+            raw_bytes,
+            raw_object_name,
+            "application/octet-stream",
+        )
+
+    # ==============================
+    # UPLOAD FINAL
+    # ==============================
+
+    with open(
+        final_file,
+        "rb",
+    ) as f:
+        csv_bytes = f.read()
+
+    final_object_name = (
+        f"bps/{storage_name}/final/"
+        f"{file_name}.csv"
+    )
+
+    upload_bytes(
+        etl.minio_client,
+        MINIO_BUCKET,
+        csv_bytes,
+        final_object_name,
+        "text/csv",
+    )
+
+    print("\n========================================")
+    print("PIPELINE 16517 SELESAI")
+    print("========================================")
+
+    print(
+        "TOTAL RAW:",
+        len(df_bps),
+    )
+
+    print(
+        "TOTAL FINAL:",
+        len(df_final),
+    )
+
+    return df_final
+
 def update_idnamadata_ginirasio(
     idnamadata=None,
     iditem=None,
@@ -4658,7 +8768,7 @@ def update_idnamadata_ginirasio(
     Update dataframe Gini Ratio.
     """
 
-    config = get_bps_config(
+    config = get_config(BPS_CONFIG,
         "gini_ratio"
     )
 
@@ -4686,7 +8796,7 @@ def update_idnamadata_apm(
     Generic update untuk dataset APM.
     """
 
-    config = get_bps_config(config_name)
+    config = get_config(BPS_CONFIG, config_name)
 
     if idnamadata is None:
         idnamadata = config.get("idnamadata")
@@ -4771,6 +8881,13 @@ def fetch(params=None):
             ),
         )
 
+    # PERCERAIAN LAIN-LAIN
+    if idnamadata == 16517:
+        return update_idnamadata_perceraian_lain_lain(
+            idnamadata=16517,
+            backfill=backfill,
+        )
+
     # APM
     if idnamadata in config_map:
         return update_idnamadata_apm(
@@ -4779,6 +8896,22 @@ def fetch(params=None):
             iditem=iditem,
             backfill=backfill,
         )
+
+    # RASIO JENIS KELAMIN
+    if idnamadata == 30773:
+        return update_idnamadata_rasio_jenis_kelamin(
+            idnamadata=30773,
+            tahun=int(params.get("tahun", 2025)),
+        )
+
+    # INDEKS KUALITAS UDARA
+    if idnamadata == 9748:
+        pdf_path = params.get("pdf_path")
+        if not pdf_path:
+            raise ValueError(
+                "Parameter pdf_path wajib diisi untuk IKU 9748"
+            )
+        return update_idnamadata_iku(pdf_path)
 
     # GINI RASIO
     return update_idnamadata_ginirasio(
@@ -4811,17 +8944,37 @@ def main():
         help="Ambil seluruh histori data BPS",
     )
 
+    parser.add_argument(
+        "--pdf-path",
+        type=str,
+        default=None,
+        help="Path PDF sumber IKU 2024",
+    )
+
     args = parser.parse_args()
 
     print("\n========================================")
-    print("BPS GINI RATIO PIPELINE")
+    print("BPS DATA PIPELINE")
     print("========================================")
 
-    if args.idnamadata == 9869:
+    if args.idnamadata == 9748:
+        if not args.pdf_path:
+            parser.error("--pdf-path wajib diisi untuk IKU")
+
+        df_final = update_idnamadata_iku(args.pdf_path)
+
+    elif args.idnamadata == 9869:
 
         df_final = update_idnamadata_hotel(
             idnamadata=9869,
             tahun=args.tahun,
+            backfill=args.backfill,
+        )
+
+    elif args.idnamadata == 16517:
+
+        df_final = update_idnamadata_perceraian_lain_lain(
+            idnamadata=16517,
             backfill=args.backfill,
         )
 
@@ -4835,6 +8988,27 @@ def main():
             "idnamadata": args.idnamadata,
             "backfill": args.backfill,
         })
+
+    elif args.idnamadata == 30773:
+
+        df_final = update_idnamadata_rasio_jenis_kelamin(
+            idnamadata=30773,
+            tahun=args.tahun,
+        )
+
+    elif args.idnamadata == 9913:
+
+        df_final = update_idnamadata_ipm_laki_laki(
+            idnamadata=9913,
+            tahun=args.tahun,
+        )
+
+    elif args.idnamadata == 9914:
+
+        df_final = update_idnamadata_ipm_perempuan(
+            idnamadata=9914,
+            tahun=args.tahun,
+        )
 
     else:
 
@@ -4850,7 +9024,6 @@ def main():
         "FINAL ROW:",
         len(df_final),
     )
-
 
 if __name__ == "__main__":
     main()

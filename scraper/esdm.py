@@ -1,7 +1,14 @@
 import io
 import os
 import re
+import sys
 from pathlib import Path
+
+# Pastikan root project (D:\data-project) masuk ke Python path saat
+# script dijalankan dengan `python scraper/esdm.py 304`.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
 import requests
@@ -34,8 +41,6 @@ DATABASE_BASE_URL = "https://xflask.databoks.id/database"
 # ============================================================
 # PATH ESDM
 # ============================================================
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 MINIO_BUCKET = "maganghub"
 
@@ -94,11 +99,27 @@ ESDM_CONFIG = {
 
         # Laporan Kinerja 2025 digunakan karena
         # laporan tersebut memuat data tahun 2024.
+        "source_method": "local_laporan_kinerja_pdf",
+        "local_pdf": Path(r"D:\data-project\Laporan Kinerja 2025.pdf"),
         "source_url": (
             "https://migas.esdm.go.id/cms/uploads/"
             "informasi-publik/Laporan-Kinerja/"
             "LAKIN-2025.pdf"
         ),
+    },
+    304: {
+        "indikator": "Ekspor Gas Pipa",
+        "sumber": "Kementerian ESDM",
+        "tahun_terbaru": 2025,
+        "storage_name": "ekspor_gas_pipa",
+        "file_name": "ekspor_gas_pipa",
+        "source_method": "local_handbook_pdf_collection",
+        "handbook_dir": PROJECT_ROOT / "handbook",
+        "output_file": (
+            PROJECT_ROOT / "data" / "raw" / "esdm"
+            / "ekspor_gas_pipa" / "ekspor_gas_pipa_handbook.csv"
+        ),
+        "minio_prefix": "esdm/ekspor_gas_pipa/",
     },
 }
 
@@ -106,32 +127,41 @@ ITEM_MASTER_FILE = PROJECT_ROOT / "item.parquet"
 
 
 # ============================================================
-# CLASS 1 - SCRAPER
+# CLASS 1 - LAPORAN KINERJA PDF SCRAPER (ID 4784)
 # ============================================================
 
-class ESDMScraper:
+class ESDMLaporanKinerjaPDF:
 
     def __init__(
         self,
         source_url,
         jumlah_tahun=3,
+        local_pdf=None,
     ):
         self.source_url = source_url
         self.jumlah_tahun = int(jumlah_tahun)
+        self.local_pdf = Path(
+            local_pdf or r"D:\data-project\Laporan Kinerja 2025.pdf"
+        )
 
     # --------------------------------------------------------
     # DOWNLOAD PDF
     # --------------------------------------------------------
 
     def download_pdf(self):
-        local_pdf = r"D:\data-project\Laporan Kinerja 2025.pdf"
+        local_pdf = self.local_pdf
 
         print("\n" + "=" * 60)
-        print("LOAD PDF ESDM")
+        print("LOAD PDF ESDM - CADANGAN MINYAK BUMI")
         print("=" * 60)
 
         print("LOCAL PDF:")
         print(local_pdf)
+
+        if not local_pdf.exists():
+            raise FileNotFoundError(
+                f"PDF laporan kinerja tidak ditemukan: {local_pdf}"
+            )
 
         with open(local_pdf, "rb") as f:
             pdf_bytes = f.read()
@@ -419,7 +449,609 @@ class ESDMScraper:
 
 
 # ============================================================
-# CLASS 2 - ETL
+# CLASS 2 - HANDBOOK PDF SCRAPER (ID 304)
+# ============================================================
+
+class ESDMHandbookScraper:
+    """Ekstraksi tabel Ekspor Gas Pipa dari PDF handbook ESDM lokal.
+
+    Kelas ini terpisah dari scraper laporan kinerja karena sumber dan cara
+    akuisisinya berbeda. RAW disimpan sebagai Parquet per tahun untuk audit;
+    tidak menjalankan ETL/final maupun upload MinIO otomatis.
+    """
+
+    KEYWORDS = (
+        "natural gas and lng supply and demand",
+        "export gas pipa",
+        "export pipeline gas",
+        "gas utilization",
+    )
+
+    def __init__(
+        self,
+        handbook_dir=None,
+        output_file=None,
+        idnamadata=304,
+        indikator="Ekspor Gas Pipa",
+        source_name="Kementerian ESDM",
+    ):
+        self.handbook_dir = Path(
+            handbook_dir or (PROJECT_ROOT / "handbook")
+        )
+        self.output_file = Path(
+            output_file or (
+                PROJECT_ROOT / "data" / "raw" / "esdm"
+                / "ekspor_gas_pipa" / "ekspor_gas_pipa_handbook.csv"
+            )
+        )
+        self.idnamadata = int(idnamadata)
+        self.indikator = indikator
+        self.source_name = source_name
+
+    @staticmethod
+    def _clean(value):
+        return re.sub(r"\s+", " ", str(value or "")).strip()
+
+    @staticmethod
+    def _number(value):
+        value = str(value or "").strip()
+        if not value or value in {"-", "–", "—", "...", "NA", "N/A"}:
+            return None
+        value = value.replace(",", "").replace(" ", "")
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+        if number.is_integer():
+            return int(number)
+        return number
+
+    @staticmethod
+    def _unit(header_text):
+        text = re.sub(r"\s+", "", header_text.upper())
+        for unit in ("MMSCF", "BSCF", "TBTU", "THOUSANDMMBTU", "MMBTU"):
+            if unit in text:
+                return unit
+        return "PERLU_DICEK"
+
+    def _table_info(self, table):
+        """Deteksi kolom dari header multi-baris maupun header terpecah per sel."""
+        if not table:
+            return None
+
+        header_rows = table[:8]
+        max_cols = max((len(row) for row in header_rows if row), default=0)
+        if max_cols == 0:
+            return None
+
+        # Gabungkan teks per kolom secara vertikal. Pada beberapa handbook,
+        # header "Export Pipeline Gas" terpecah menjadi beberapa baris/sel.
+        column_headers = []
+        for col_idx in range(max_cols):
+            parts = []
+            for row in header_rows:
+                if col_idx < len(row):
+                    cell = self._clean(row[col_idx])
+                    if cell and cell.lower() not in {"none", "nan"}:
+                        parts.append(cell)
+            column_headers.append(re.sub(r"\s+", " ", " ".join(parts)).lower())
+
+        header_text = " ".join(
+            self._clean(cell) for row in header_rows for cell in row
+        )
+        header_text = re.sub(r"\s+", " ", header_text)
+
+        year_idx = None
+        export_idx = None
+        for idx, col_text in enumerate(column_headers):
+            normalized = re.sub(r"[^a-z0-9]+", " ", col_text).strip()
+            if year_idx is None and re.search(r"\byear\b", normalized):
+                year_idx = idx
+            if export_idx is None and (
+                "export pipeline gas" in normalized
+                or "export gas pipa" in normalized
+                or ("export" in normalized and "pipeline" in normalized and "gas" in normalized)
+            ):
+                export_idx = idx
+
+        # Fallback untuk tabel yang header Year terbaca utuh di satu sel.
+        if year_idx is None or export_idx is None:
+            for row in header_rows:
+                for idx, cell in enumerate(row):
+                    cell_norm = re.sub(r"\s+", " ", self._clean(cell).lower())
+                    if year_idx is None and cell_norm == "year":
+                        year_idx = idx
+                    if export_idx is None and (
+                        "export pipeline gas" in cell_norm
+                        or "export gas pipa" in cell_norm
+                    ):
+                        export_idx = idx
+
+        return {
+            "header_text": header_text,
+            "column_headers": column_headers,
+            "export_idx": export_idx,
+            "year_idx": year_idx,
+            "unit": self._unit(header_text),
+        }
+
+    def _record(self, year, value, unit, pdf_path, page_number):
+        return {
+            "idnamadata": self.idnamadata,
+            "indikator": self.indikator,
+            "tahun": int(year),
+            "data_y": value,
+            "satuan": unit,
+            "sumber": self.source_name,
+            "edisi_handbook": pdf_path.stem,
+            "file_sumber": pdf_path.name,
+            "halaman_pdf": page_number,
+        }
+
+    def _extract_page_tables(self, page, pdf_path, page_number):
+        """Ekstraksi untuk tabel yang memiliki Year dan kolom ekspor pada halaman sama."""
+        records = []
+        for table in (page.extract_tables() or []):
+            info = self._table_info(table)
+            if not info or info["export_idx"] is None or info["year_idx"] is None:
+                continue
+            year_idx = info["year_idx"]
+            export_idx = info["export_idx"]
+            for row in table:
+                if max(year_idx, export_idx) >= len(row):
+                    continue
+                year = self._number(row[year_idx])
+                value = self._number(row[export_idx])
+                if year is None or value is None or not (1900 <= year <= 2100):
+                    continue
+                records.append(self._record(
+                    year, value, info["unit"], pdf_path, page_number
+                ))
+        return records
+
+    def extract_pdf(self, pdf_path):
+        """Ekstrak tabel langsung atau tabel yang terbelah horizontal lintas halaman.
+
+        Pada beberapa edisi, kolom Year berada di halaman kiri dan kolom
+        Export Pipeline Gas berada di halaman kanan/halaman berikutnya. Untuk
+        layout ini, tahun dan nilai dipasangkan hanya jika jumlah barisnya sama.
+        """
+        records = []
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            # HANDLING KHUSUS HANDBOOK 2025:
+            # Tabel Gas Utilization tercetak pada halaman buku 96-97 (PDF 112-113).
+            # pdfplumber membaca baris data sebagai teks lengkap pada kedua halaman,
+            # walaupun tabelnya terpecah secara horizontal. Urutan kolom setelah Year:
+            # Gas Fuel, City Gas, Lifting, Fertilizer, Electricity, Refinery,
+            # Industry, LNG Domestic, LPG Domestic, Export Pipeline Gas, Export LNG.
+            # Karena itu nilai Export Pipeline Gas adalah angka ke-2 dari kanan.
+            # Ambil dari teks halaman yang memiliki header target dan validasi jumlah
+            # angka per baris agar tidak mengandalkan tabel parsial hasil extract_tables().
+
+            direct_records = []
+
+            for page_number, page in enumerate(pdf.pages, start=1):
+                text = page.extract_text() or ""
+                text_norm = re.sub(r"\s+", " ", text.lower())
+
+                # Tabel Gas Utilization pada handbook 2025
+                if (
+                    page_number not in (112, 113)
+                    and "export pipeline" not in text_norm
+                ):
+                    continue
+
+                for line in text.splitlines():
+                    match = re.match(r"^\s*(20\d{2})\s+(.+?)\s*$", line)
+
+                    if not match:
+                        continue
+
+                    year = int(match.group(1))
+
+                    # Ambil seluruh tahun yang tersedia,
+                    # bukan hanya tahun 2025.
+                    number_tokens = re.findall(
+                        r"(?<![A-Za-z])\d[\d,]*(?:\.\d+)?",
+                        match.group(2),
+                    )
+
+                    values = [
+                        self._number(token)
+                        for token in number_tokens
+                    ]
+                    values = [
+                        value for value in values
+                        if value is not None
+                    ]
+
+                    # Tabel memiliki 11 nilai numerik setelah tahun.
+                    if len(values) != 11:
+                        print(
+                            f"  BARIS {year} HALAMAN PDF "
+                            f"{page_number} DIABAIKAN: "
+                            f"diharapkan 11 nilai, ditemukan "
+                            f"{len(values)} | {line}"
+                        )
+                        continue
+
+                    # Export Pipeline Gas adalah angka kedua dari kanan.
+                    export_pipeline_gas = values[-2]
+
+                    print(
+                        f"  DATA TARGET DITEMUKAN: "
+                        f"halaman PDF {page_number} | "
+                        f"tahun={year} | "
+                        f"Export Pipeline Gas={export_pipeline_gas}"
+                    )
+
+                    direct_records.append(
+                        self._record(
+                            year,
+                            export_pipeline_gas,
+                            "THOUSAND MMBTU",
+                            pdf_path,
+                            page_number,
+                        )
+                    )
+
+            if direct_records:
+                # Deduplikasi karena baris dapat terbaca
+                # pada kedua halaman PDF.
+                unique = {}
+
+                for record in direct_records:
+                    key = (
+                        record["tahun"],
+                        record["data_y"],
+                        record["satuan"],
+                    )
+                    unique.setdefault(key, record)
+
+                return list(unique.values())
+
+            page_parts = []
+            for page_number, page in enumerate(pdf.pages, start=1):
+                text = page.extract_text() or ""
+                text_norm = re.sub(r"\s+", " ", text.lower())
+                tables = page.extract_tables() or []
+                table_infos = [(table, self._table_info(table)) for table in tables]
+
+                has_relevant_text = any(k in text_norm for k in self.KEYWORDS)
+                has_target_header = any(
+                    info and info["export_idx"] is not None
+                    for _, info in table_infos
+                )
+                has_year_header = any(
+                    info and info["year_idx"] is not None
+                    for _, info in table_infos
+                )
+                if has_relevant_text or has_target_header:
+                    print(
+                        f"  Kandidat tabel: {pdf_path.name} "
+                        f"| halaman PDF {page_number}"
+                    )
+
+                # Prioritas pertama: tabel lengkap dalam satu halaman.
+                direct = self._extract_page_tables(page, pdf_path, page_number)
+                if direct:
+                    records.extend(direct)
+                    continue
+
+                # Simpan tahun dari bagian kiri tabel Gas Utilization.
+                years = []
+                if (
+                    "gas utilization" in text_norm
+                    or "utilization" in text_norm
+                    or has_year_header
+                ):
+                    for table, info in table_infos:
+                        if not info:
+                            continue
+                        yi = info["year_idx"]
+                        # Fallback: header Year kadang tidak dikenali karena
+                        # kolomnya terpotong, tetapi tahun tetap ada di kolom pertama.
+                        candidate_indices = [yi] if yi is not None else [0]
+                        for row in table:
+                            year = None
+                            for yi_candidate in candidate_indices:
+                                if yi_candidate < len(row):
+                                    year = self._number(row[yi_candidate])
+                                    if year is not None and 2012 <= year <= 2035:
+                                        break
+                            if year is not None and 2012 <= year <= 2035:
+                                years.append(int(year))
+                    # Fallback kedua dari teks halaman, khusus tabel yang
+                    # pdfplumber tidak membentuk sebagai tabel terstruktur.
+                    if not years:
+                        for line in text.splitlines():
+                            match = re.match(r"^\s*(20(?:1[2-9]|2[0-9]|3[0-5]))(?:\s|$)", line)
+                            if match:
+                                years.append(int(match.group(1)))
+                    years = list(dict.fromkeys(years))
+
+                # Simpan nilai kolom ekspor dari bagian kanan tabel.
+                # Pada handbook 2025, header target terdeteksi pada teks halaman,
+                # tetapi _table_info() tidak selalu berhasil menentukan export_idx.
+                has_export_text = (
+                    "export pipeline gas" in text_norm
+                    or "export gas pipa" in text_norm
+                )
+                values = []
+                value_unit = "PERLU_DICEK"
+                if has_target_header or has_export_text:
+                    for table, info in table_infos:
+                        if not info:
+                            continue
+                        ei = info["export_idx"]
+                        if ei is not None:
+                            value_unit = info["unit"]
+                            for row in table:
+                                if ei >= len(row):
+                                    continue
+                                value = self._number(row[ei])
+                                if value is not None:
+                                    values.append(value)
+                        elif has_export_text:
+                            # Fallback untuk halaman lanjutan yang headernya
+                            # terpecah/tidak terdeteksi sebagai satu kolom.
+                            # Export Pipeline Gas adalah angka kedua dari kanan
+                            # pada baris data (sebelum Export LNG). Abaikan
+                            # baris header dan hanya ambil baris berisi >=2 angka.
+                            value_unit = self._unit(text_norm)
+                            for row in table:
+                                numeric_cells = [self._number(cell) for cell in row]
+                                numeric_cells = [v for v in numeric_cells if v is not None]
+                                if len(numeric_cells) >= 2:
+                                    values.append(numeric_cells[-2])
+                    # Fallback teks jika tabel tidak berhasil dipecah menjadi
+                    # kolom. Ini hanya digunakan pada halaman yang menyebut
+                    # kolom ekspor secara eksplisit.
+                    if not values and has_export_text:
+                        value_unit = self._unit(text_norm)
+                        for line in text.splitlines():
+                            nums = re.findall(r"(?<![A-Za-z])\d[\d,]*(?:\.\d+)?", line)
+                            parsed = [self._number(n) for n in nums]
+                            parsed = [v for v in parsed if v is not None]
+                            if len(parsed) >= 2 and not any(2012 <= v <= 2035 for v in parsed):
+                                values.append(parsed[-2])
+
+                page_parts.append({
+                    "page_number": page_number,
+                    "years": years,
+                    "values": values,
+                    "unit": value_unit,
+                    "has_target_header": has_target_header,
+                    "has_year_header": has_year_header,
+                    "text_norm": text_norm,
+                })
+
+            # Pasangkan tabel yang terbelah horizontal antarhalaman.
+            # Cari daftar tahun sebelumnya yang paling dekat, tetapi hanya
+            # dari halaman yang menunjukkan tabel Gas Utilization/Year.
+            for idx, part in enumerate(page_parts):
+                if not part["values"] or part["years"]:
+                    continue
+
+                previous = None
+                for candidate in reversed(page_parts[:idx]):
+                    if candidate["years"] and (
+                        "gas utilization" in candidate["text_norm"]
+                        or "utilization" in candidate["text_norm"]
+                    ):
+                        previous = candidate
+                        break
+                if previous is None:
+                    continue
+
+                years = previous["years"]
+                values = part["values"]
+
+                # Kadang ekstraksi tabel mengambil angka dari baris header/footer.
+                # Jangan menebak pasangan; log jumlahnya agar kegagalan terlihat.
+                if len(years) != len(values):
+                    print(
+                        f"  TIDAK DIPASANGKAN halaman {previous['page_number']}-"
+                        f"{part['page_number']}: jumlah tahun={len(years)}, "
+                        f"jumlah nilai ekspor={len(values)}"
+                    )
+                    continue
+
+                print(
+                    f"  TABEL TERBELAH: halaman {previous['page_number']} + "
+                    f"{part['page_number']} | {len(years)} baris | "
+                    f"satuan={part['unit']}"
+                )
+                for year, value in zip(years, values):
+                    records.append(self._record(
+                        year, value, part["unit"], pdf_path, part["page_number"]
+                    ))
+
+        return records
+
+    def run(self):
+        if not self.handbook_dir.exists():
+            raise FileNotFoundError(
+                f"Folder handbook tidak ditemukan: {self.handbook_dir}. "
+                "Simpan PDF handbook ESDM 2012-2025 di folder tersebut."
+            )
+
+        # Baca seluruh PDF di folder handbook.
+        pdf_files = sorted(
+            path
+            for path in self.handbook_dir.glob("*.pdf")
+            if path.is_file()
+        )
+
+        if not pdf_files:
+            raise FileNotFoundError(
+                f"Tidak ada PDF di folder {self.handbook_dir}"
+            )
+
+        print("\n" + "=" * 65)
+        print("ESDM HANDBOOK SCRAPER - ID 304 EKSPOR GAS PIPA (ALL PDF)")
+        print("FOLDER:", self.handbook_dir)
+        print("JUMLAH PDF:", len(pdf_files))
+        print("=" * 65)
+
+        records = []
+        for pdf_path in pdf_files:
+            print(f"\nMEMBACA: {pdf_path.name}")
+            try:
+                records.extend(self.extract_pdf(pdf_path))
+            except Exception as exc:
+                print(f"  GAGAL MEMBACA {pdf_path.name}: {exc}")
+
+        df = pd.DataFrame(records)
+        # Ambil data mulai tahun 2012.
+        df["tahun"] = pd.to_numeric(df["tahun"], errors="coerce")
+        df = df[df["tahun"] >= 2012].copy()
+        if df.empty:
+            print("\nBELUM ADA RECORD YANG BERHASIL DIEKSTRAK.")
+            print("Parser tabel perlu disesuaikan dengan struktur PDF yang terbaca.")
+            return df
+
+        # Simpan seluruh observasi tahun yang berhasil diekstrak.
+        df = df.copy()
+
+        if df.empty:
+            print("\nTidak ada record yang berhasil diekstrak.")
+            return df
+
+        # Simpan kandidat dari tiap edisi untuk audit. Jangan deduplikasi
+        # hanya berdasarkan tahun karena setiap handbook adalah bukti sumber.
+        df = (
+            df.drop_duplicates(
+                subset=["tahun", "data_y", "satuan", "edisi_handbook"]
+            )
+            .sort_values(["tahun", "edisi_handbook", "halaman_pdf"])
+            .reset_index(drop=True)
+        )
+
+        # RAW Parquet per tahun, mengikuti pola template scraper OJK:
+        # ekspor_gas_pipa_2012_.parquet, ekspor_gas_pipa_2013_.parquet, dst.
+        raw_dir = self.output_file.parent
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        file_stem = self.output_file.stem.replace("_handbook", "")
+        saved_files = {}
+
+        for year, df_year in df.groupby("tahun", sort=True):
+            year = int(year)
+            raw_file = raw_dir / f"{file_stem}_{year}_.parquet"
+            df_year.to_parquet(raw_file, index=False)
+            saved_files[year] = raw_file
+            print(
+                f"RAW SAVED: {raw_file} | ROWS: {len(df_year)}"
+            )
+
+        print("\nREKAP TAHUN:")
+        print(df.groupby(["satuan"]).agg(
+            jumlah_record=("tahun", "size"),
+            tahun_awal=("tahun", "min"),
+            tahun_akhir=("tahun", "max"),
+        ).to_string())
+        print("\nHASIL EKSTRAKSI:")
+        print(df.to_string(index=False))
+
+        print("\nTOTAL FILE RAW:", len(saved_files))
+        print("FOLDER RAW:", raw_dir)
+
+        # ====================================================
+        # FINAL CSV - ID 304 EKSPOR GAS PIPA
+        # ====================================================
+
+        final_dir = (
+            PROJECT_ROOT
+            / "final"
+            / "esdm"
+            / "ekspor_gas_pipa"
+            / "final"
+        )
+        final_dir.mkdir(parents=True, exist_ok=True)
+
+        final_file = final_dir / "ekspor_gas_pipa.csv"
+
+        df_final = df.copy()
+
+        # Format sesuai struktur final ESDM
+        df_final["idnamadata"] = self.idnamadata
+        df_final["nama_indikator"] = self.indikator
+        df_final["item"] = "Indonesia"
+        df_final["id_item"] = pd.NA
+        df_final["data_x"] = (
+            pd.to_datetime(
+                df_final["tahun"].astype(str) + "-12-31",
+                format="%Y-%m-%d",
+            ).dt.strftime("%d-%m-%Y")
+        )
+        df_final["sumber"] = self.source_name
+        df_final["nama_data_import"] = df_final["file_sumber"]
+        df_final["negara"] = "Indonesia"
+
+        df_final = df_final[
+            [
+                "idnamadata",
+                "nama_indikator",
+                "item",
+                "id_item",
+                "data_x",
+                "data_y",
+                "satuan",
+                "sumber",
+                "nama_data_import",
+                "negara",
+            ]
+        ]
+
+        # Cek agar CSV tidak kosong
+        if df_final.empty:
+            raise RuntimeError(
+                "Final CSV tidak dibuat karena data kosong."
+            )
+
+        # Simpan CSV lokal
+        df_final.to_csv(
+            final_file,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        print("\nFINAL CSV BERHASIL DISIMPAN:")
+        print(final_file)
+        print(df_final.to_string(index=False))
+
+        # ====================================================
+        # UPLOAD FINAL CSV KE MINIO
+        # ====================================================
+
+        minio_object = (
+            "esdm/ekspor_gas_pipa/final/ekspor_gas_pipa.csv"
+        )
+
+        with open(final_file, "rb") as file:
+            final_bytes = file.read()
+
+        minio_client = get_minio_client()
+
+        upload_bytes(
+            minio_client,
+            MINIO_BUCKET,
+            final_bytes,
+            minio_object,
+            "text/csv",
+        )
+
+        print("\nFINAL CSV MINIO UPLOAD BERHASIL:")
+        print(f"s3://{MINIO_BUCKET}/{minio_object}")
+
+        print("\nTOTAL FINAL ROW:", len(df_final))
+
+        return df_final
+
+
+
+# ============================================================
+# CLASS 3 - ETL CADANGAN MINYAK BUMI (EXISTING)
 # ============================================================
 
 class ESDMETL:
@@ -1505,6 +2137,133 @@ class ESDMETL:
 
         return df_final
 
+
+def build_ekspor_gas_pipa_final_only():
+    """Bangun FINAL dari RAW Parquet lokal tanpa membaca/scrape PDF.
+
+    Nilai THOUSAND MMBTU dikonversi secara pendekatan ke MMSCF memakai faktor
+    ESDM (1 MMSCF ~= 1.01 thousand MMBTU), agar satuan FINAL konsisten dengan XFlask.
+    """
+    raw_dir = PROJECT_ROOT / "data" / "raw" / "esdm" / "ekspor_gas_pipa"
+    raw_files = sorted(raw_dir.glob("ekspor_gas_pipa_*_.parquet"))
+    if not raw_files:
+        raise FileNotFoundError(
+            f"RAW Parquet tidak ditemukan: {raw_dir}. Pastikan data sudah pernah di-scrape."
+        )
+
+    frames = []
+    for path in raw_files:
+        part = pd.read_parquet(path)
+        if not part.empty:
+            frames.append(part)
+    if not frames:
+        raise RuntimeError("Semua RAW Parquet kosong.")
+
+    df = pd.concat(frames, ignore_index=True)
+    required = {"tahun", "data_y", "satuan", "file_sumber", "edisi_handbook"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Kolom RAW tidak lengkap: {sorted(missing)}")
+
+    df["satuan_norm"] = (
+        df["satuan"].astype(str).str.upper().str.replace(r"\s+", "", regex=True)
+    )
+    df["tahun"] = pd.to_numeric(df["tahun"], errors="coerce")
+    # Paksa data_y menjadi float SEBELUM konversi satuan. RAW Parquet lama
+    # bisa menyimpan kolom ini sebagai int64, sedangkan hasil pembagian
+    # THOUSAND MMBTU / 1.01 berupa float; tanpa cast ini pandas akan error.
+    df["data_y"] = pd.to_numeric(df["data_y"], errors="coerce").astype("float64")
+    # XFlask untuk ID 304 mengharapkan MMSCF. RAW handbook lama dapat
+    # memakai MMSCF, sedangkan edisi baru memakai THOUSAND MMBTU.
+    # Faktor pendekatan dari tabel konversi ESDM: 1 billion cubic feet NG
+    # ~= 1.01 trillion Btu, sehingga 1 MMSCF ~= 1.01 thousand MMBTU.
+    # Karena itu THOUSAND MMBTU dikonversi ke MMSCF dengan membagi 1.01.
+    # Ini konversi pendekatan resmi, bukan sekadar mengganti label satuan.
+    df = df[
+        df["satuan_norm"].isin({"MMSCF", "THOUSANDMMBTU"})
+        & df["tahun"].notna()
+        & df["data_y"].notna()
+        & (df["tahun"] >= 2012)
+    ].copy()
+    if df.empty:
+        raise RuntimeError(
+            "Tidak ada data dengan satuan MMSCF atau THOUSAND MMBTU pada RAW Parquet."
+        )
+
+    mask_thousand_mmbtu = df["satuan_norm"].eq("THOUSANDMMBTU")
+    df.loc[mask_thousand_mmbtu, "data_y"] = (
+        df.loc[mask_thousand_mmbtu, "data_y"] / 1.01
+    )
+    df["satuan"] = "MMSCF"
+
+    # Ambil edisi handbook terbaru per tahun setelah semua satuan dinormalisasi.
+    df["edisi_tahun"] = pd.to_numeric(
+        df["edisi_handbook"].astype(str).str.extract(r"((?:19|20)\d{2})")[0],
+        errors="coerce",
+    ).fillna(0)
+    df = (
+        df.sort_values(["tahun", "edisi_tahun", "file_sumber"], ascending=[True, False, False])
+        .drop_duplicates(subset=["tahun"], keep="first")
+        .sort_values("tahun")
+        .copy()
+    )
+
+    final_dir = PROJECT_ROOT / "final" / "esdm" / "ekspor_gas_pipa" / "final"
+    final_dir.mkdir(parents=True, exist_ok=True)
+    final_file = final_dir / "ekspor_gas_pipa.csv"
+
+    # Harus berupa object-storage path, bukan nama PDF lokal seperti *.pdf.
+    raw_object_prefix = "s3://maganghub/esdm/ekspor_gas_pipa/raw/"
+    final = pd.DataFrame({
+        "idnamadata": 304,
+        "nama_indikator": "Ekspor Gas Pipa",
+        "item": "Indonesia",
+        "id_item": pd.NA,
+        "data_x": pd.to_datetime(
+            df["tahun"].astype(int).astype(str) + "-12-31", errors="coerce"
+        ).dt.strftime("%d-%m-%Y"),
+        "data_y": df["data_y"].astype(float).values,
+        "satuan": "MMSCF",
+        "sumber": "Kementerian ESDM",
+        "nama_data_import": raw_object_prefix,
+        "negara": "Indonesia",
+    })
+    final = final[[
+        "idnamadata", "nama_indikator", "item", "id_item", "data_x",
+        "data_y", "satuan", "sumber", "nama_data_import", "negara",
+    ]]
+
+    if final.empty or final["data_x"].isna().any():
+        raise RuntimeError("FINAL CSV kosong atau memiliki tanggal tidak valid.")
+    if not final["satuan"].eq("MMSCF").all():
+        raise RuntimeError("Validasi satuan FINAL gagal: semua baris harus MMSCF.")
+    if not final["nama_data_import"].astype(str).str.startswith(("http://", "https://", "s3://", "tos://", "minio://", "/")).all():
+        raise RuntimeError("Validasi nama_data_import gagal: harus berupa URL/path object storage.")
+
+    final.to_csv(final_file, index=False, encoding="utf-8-sig")
+    print("FINAL-ONLY: tidak membaca PDF dan tidak menjalankan scraper.")
+    print(f"RAW lokal dibaca: {len(raw_files)} file")
+    print(f"FINAL CSV: {final_file}")
+    print(f"Jumlah baris FINAL: {len(final)}")
+    print(final.to_string(index=False))
+
+    # Upload RAW yang sudah ada ke MinIO; tidak melakukan scraping ulang.
+    client = get_minio_client()
+    for raw_file in raw_files:
+        object_name = f"esdm/ekspor_gas_pipa/raw/{raw_file.name}"
+        upload_bytes(
+            client, MINIO_BUCKET, raw_file.read_bytes(),
+            object_name, "application/octet-stream",
+        )
+        print(f"MINIO RAW: s3://{MINIO_BUCKET}/{object_name}")
+
+    # Upload FINAL CSV secara terpisah.
+    final_object = "esdm/ekspor_gas_pipa/final/ekspor_gas_pipa.csv"
+    upload_bytes(client, MINIO_BUCKET, final_file.read_bytes(), final_object, "text/csv")
+    print(f"MINIO FINAL: s3://{MINIO_BUCKET}/{final_object}")
+    return final
+
+
 def fetch(params=None):
 
     params = params or {}
@@ -1519,9 +2278,10 @@ def fetch(params=None):
 
         config = ESDM_CONFIG[4784]
 
-        scraper = ESDMScraper(
+        scraper = ESDMLaporanKinerjaPDF(
             source_url=config["source_url"],
             jumlah_tahun=config["jumlah_tahun_scrape"],
+            local_pdf=config["local_pdf"],
         )
 
         etl = ESDMETL(
@@ -1530,6 +2290,20 @@ def fetch(params=None):
         )
 
         return etl.run(scraper)
+
+    # EKSPOR GAS PIPA - sumber PDF handbook, pipeline terpisah
+    if idnamadata == 304:
+        config = ESDM_CONFIG[304]
+        scraper = ESDMHandbookScraper(
+            handbook_dir=config["handbook_dir"],
+            output_file=config["output_file"],
+            idnamadata=idnamadata,
+            indikator=config["indikator"],
+            source_name=config["sumber"],
+        )
+        # Tahap ini hanya ekstraksi + RAW Parquet per tahun. Tidak mengubah
+        # final Cadangan Minyak Bumi dan tidak upload ke MinIO otomatis.
+        return scraper.run()
 
     raise ValueError(
         f"idnamadata ESDM tidak dikenali: {idnamadata}"
@@ -1540,24 +2314,32 @@ def fetch(params=None):
 # ============================================================
 
 if __name__ == "__main__":
+    import sys
 
-    config = ESDM_CONFIG[4784]
+    # Untuk membangun ulang FINAL CSV dari RAW saja:
+    # python scraper/esdm.py 304 --final-only
+    requested_id = int(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else 304
+    # ID 304 default-nya hanya rebuild FINAL dari RAW; scrape PDF harus diminta eksplisit dengan --scrape.
+    final_only = "--scrape" not in sys.argv[1:]
 
-    scraper = ESDMScraper(
-        source_url=config["source_url"],
-        jumlah_tahun=config["jumlah_tahun_scrape"],
-    )
-
-    etl = ESDMETL(
-        id_nama_data=4784,
-        nama_data_import=config["source_url"],
-    )
-
-    df_final = etl.run(
-        scraper
-    )
-
-    print(
-        "\nTOTAL FINAL:",
-        len(df_final),
-    )
+    if requested_id == 304 and final_only:
+        result = build_ekspor_gas_pipa_final_only()
+        print("\nTOTAL FINAL ROW:", len(result))
+    elif requested_id == 304:
+        result = fetch({"idnamadata": 304})
+        print("\nTOTAL HASIL EKSTRAKSI:", len(result))
+    elif requested_id == 4784:
+        config = ESDM_CONFIG[4784]
+        scraper = ESDMLaporanKinerjaPDF(
+            source_url=config["source_url"],
+            jumlah_tahun=config["jumlah_tahun_scrape"],
+            local_pdf=config["local_pdf"],
+        )
+        etl = ESDMETL(
+            id_nama_data=4784,
+            nama_data_import=config["source_url"],
+        )
+        df_final = etl.run(scraper)
+        print("\nTOTAL FINAL:", len(df_final))
+    else:
+        raise ValueError(f"ID ESDM belum didukung: {requested_id}")

@@ -1,20 +1,11 @@
-import requests
 
+import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
-DEFAULT_STATUS_FORCELIST = [
-    429,
-    500,
-    502,
-    503,
-    504,
-]
-
-DEFAULT_ALLOWED_METHODS = [
-    "GET",
-]
+DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
+DEFAULT_ALLOWED_METHODS = ("GET",)
 
 
 def create_session(
@@ -38,21 +29,11 @@ def create_session(
         allowed_methods=allowed_methods,
     )
 
-    adapter = HTTPAdapter(
-        max_retries=retry_strategy
-    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
 
     session = requests.Session()
-
-    session.mount(
-        "http://",
-        adapter,
-    )
-
-    session.mount(
-        "https://",
-        adapter,
-    )
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
 
     return session
 
@@ -70,9 +51,7 @@ def get(
         headers=headers,
         timeout=timeout,
     )
-
     response.raise_for_status()
-
     return response
 
 
@@ -90,7 +69,6 @@ def get_json(
         headers=headers,
         timeout=timeout,
     )
-
     return response.json()
 
 
@@ -108,5 +86,42 @@ def get_text(
         headers=headers,
         timeout=timeout,
     )
-
     return response.text
+
+
+def get_bytes(
+    session,
+    url,
+    params=None,
+    headers=None,
+    timeout=60,
+):
+    response = get(
+        session=session,
+        url=url,
+        params=params,
+        headers=headers,
+        timeout=timeout,
+    )
+    return response.content
+
+
+def post(
+    session,
+    url,
+    data=None,
+    json=None,
+    params=None,
+    headers=None,
+    timeout=60,
+):
+    response = session.post(
+        url,
+        data=data,
+        json=json,
+        params=params,
+        headers=headers,
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response
